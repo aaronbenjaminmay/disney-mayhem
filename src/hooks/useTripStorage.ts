@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { ItemStatus, PersistedState } from '../types';
+import type { EditableItemFields, ItemStatus, PersistedState, TripItem } from '../types';
 
 const storageKey = 'disney-mayhem-state-v1';
-const defaultState: PersistedState = { statuses: {}, notes: {} };
+const defaultState: PersistedState = { statuses: {}, notes: {}, itemEdits: {}, addedItems: {}, deletedItemIds: [] };
 
 function loadState(): PersistedState {
   try {
@@ -13,6 +13,9 @@ function loadState(): PersistedState {
     return {
       statuses: parsed.statuses ?? {},
       notes: parsed.notes ?? {},
+      itemEdits: parsed.itemEdits ?? {},
+      addedItems: parsed.addedItems ?? {},
+      deletedItemIds: parsed.deletedItemIds ?? [],
     };
   } catch {
     return defaultState;
@@ -30,6 +33,9 @@ export function useTripStorage() {
     () => ({
       statuses: state.statuses,
       notes: state.notes,
+      itemEdits: state.itemEdits,
+      addedItems: state.addedItems,
+      deletedItemIds: state.deletedItemIds,
       setStatus(id: string, status: ItemStatus) {
         setState((current) => ({
           ...current,
@@ -65,6 +71,30 @@ export function useTripStorage() {
             ...current.notes,
             [id]: note,
           },
+        }));
+      },
+      saveItemEdit(id: string, fields: EditableItemFields) {
+        setState((current) => ({
+          ...current,
+          itemEdits: {
+            ...current.itemEdits,
+            [id]: fields,
+          },
+        }));
+      },
+      addItem(dayId: string, item: TripItem) {
+        setState((current) => ({
+          ...current,
+          addedItems: {
+            ...current.addedItems,
+            [dayId]: [...(current.addedItems[dayId] ?? []), item],
+          },
+        }));
+      },
+      deleteItem(id: string) {
+        setState((current) => ({
+          ...current,
+          deletedItemIds: current.deletedItemIds.includes(id) ? current.deletedItemIds : [...current.deletedItemIds, id],
         }));
       },
     }),

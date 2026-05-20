@@ -529,19 +529,3 @@ export const attentionItems = tripDays.flatMap((day) =>
       item,
     })),
 );
-
-export const packingItems = [
-  'MagicBands or park tickets',
-  'Kingdom Strollers confirmation',
-  'Portable chargers',
-  'Charging cables',
-  'Cooling towels',
-  'Ponchos',
-  'Sunscreen',
-  'Refillable water bottles',
-  'Snacks for airport and buses',
-  'Kid headphones',
-  'Backup socks',
-  'Reservation confirmation screenshots',
-  'Stroller rain cover',
-];

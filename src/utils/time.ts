@@ -2,8 +2,16 @@ import type { Activity, ActiveScheduleState, ItemStatus, TripDay, TripItem } fro
 import { tripEndDate, tripStartDate } from '../data/tripData';
 
 const minutesInDay = 24 * 60;
+const departureTime = `${tripStartDate}T04:00:00`;
 
 export type TripPhase = 'before' | 'during' | 'after';
+
+export type CountdownParts = {
+  days: number;
+  hours: number;
+  minutes: number;
+  seconds: number;
+};
 
 export function timeToMinutes(time: string): number {
   const [hours, minutes] = time.split(':').map(Number);
@@ -87,8 +95,9 @@ export function getRelevantDay(days: TripDay[], date = new Date()): { day: TripD
 
 export function getTripPhase(date = new Date()): TripPhase {
   const todayId = date.toLocaleDateString('en-CA');
+  const departure = new Date(departureTime);
 
-  if (todayId < tripStartDate) return 'before';
+  if (date.getTime() < departure.getTime()) return 'before';
   if (todayId > tripEndDate) return 'after';
   return 'during';
 }
@@ -98,6 +107,19 @@ export function getCountdownDays(date = new Date()): number {
   const departure = new Date(`${tripStartDate}T00:00:00`);
   const diff = departure.getTime() - today.getTime();
   return Math.max(0, Math.ceil(diff / 86_400_000));
+}
+
+export function getDepartureCountdown(date = new Date()): CountdownParts {
+  const departure = new Date(departureTime);
+  const diff = Math.max(0, departure.getTime() - date.getTime());
+  const totalSeconds = Math.floor(diff / 1000);
+
+  return {
+    days: Math.floor(totalSeconds / 86_400),
+    hours: Math.floor((totalSeconds % 86_400) / 3_600),
+    minutes: Math.floor((totalSeconds % 3_600) / 60),
+    seconds: totalSeconds % 60,
+  };
 }
 
 export function getActiveScheduleState(

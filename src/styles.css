@@ -34,6 +34,23 @@ button {
   cursor: pointer;
 }
 
+.countdown-pulse {
+  animation: countdown-pulse 1s ease-in-out infinite;
+}
+
+@keyframes countdown-pulse {
+  0%,
+  100% {
+    box-shadow: 0 24px 60px rgba(132, 204, 22, 0.16);
+    transform: scale(1);
+  }
+
+  50% {
+    box-shadow: 0 28px 72px rgba(34, 211, 238, 0.24);
+    transform: scale(1.006);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -42,5 +59,9 @@ button {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
+  }
+
+  .countdown-pulse {
+    animation: none !important;
   }
 }

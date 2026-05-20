@@ -6,10 +6,27 @@ type ItemCardProps = {
   item: TripItem;
   statuses: Record<string, ItemStatus>;
   onCycleStatus: (id: string) => void;
+  onEdit?: (item: TripItem) => void;
   compact?: boolean;
 };
 
-export function ItemCard({ item, statuses, onCycleStatus, compact = false }: ItemCardProps) {
+function EditButton({ item, onEdit }: { item: TripItem; onEdit?: (item: TripItem) => void }) {
+  if (!onEdit) return null;
+
+  return (
+    <button
+      type="button"
+      onClick={() => onEdit(item)}
+      className="min-h-11 min-w-11 rounded-full border border-white/20 bg-white/8 px-3 text-lg font-black text-white transition hover:bg-white/14 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-cyan-200"
+      aria-label={`Edit ${item.title}`}
+      title="Edit"
+    >
+      ✎
+    </button>
+  );
+}
+
+export function ItemCard({ item, statuses, onCycleStatus, onEdit, compact = false }: ItemCardProps) {
   const itemStatus = statuses[getItemStatusKey(item)];
   const nextActivity = findNextActivity(item, statuses);
 
@@ -22,7 +39,10 @@ export function ItemCard({ item, statuses, onCycleStatus, compact = false }: Ite
             <h3 className="mt-1 text-xl font-black text-white">{item.title}</h3>
             <p className="mt-1 text-sm font-semibold text-cyan-100">{item.area}</p>
           </div>
-          <StatusButton id={item.id} status={itemStatus} onCycle={onCycleStatus} />
+          <div className="flex gap-2">
+            <EditButton item={item} onEdit={onEdit} />
+            <StatusButton id={item.id} status={itemStatus} onCycle={onCycleStatus} />
+          </div>
         </div>
 
         {item.notes ? <p className="mt-3 text-sm leading-6 text-slate-200">{item.notes}</p> : null}
@@ -65,7 +85,10 @@ export function ItemCard({ item, statuses, onCycleStatus, compact = false }: Ite
           <h3 className="mt-1 text-xl font-black text-white">{item.title}</h3>
           <p className="mt-1 text-sm font-semibold text-slate-300">{item.location}</p>
         </div>
-        <StatusButton id={item.id} status={itemStatus} onCycle={onCycleStatus} />
+        <div className="flex gap-2">
+          <EditButton item={item} onEdit={onEdit} />
+          <StatusButton id={item.id} status={itemStatus} onCycle={onCycleStatus} />
+        </div>
       </div>
       {item.notes ? <p className="mt-3 text-sm leading-6 text-slate-200">{item.notes}</p> : null}
       {item.needsAttention ? (

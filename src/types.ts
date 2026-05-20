@@ -68,6 +68,17 @@ export type TripDay = {
 export type PersistedState = {
   statuses: Record<string, ItemStatus>;
   notes: Record<string, string>;
+  itemEdits: Record<string, EditableItemFields>;
+  addedItems: Record<string, TripItem[]>;
+  deletedItemIds: string[];
+};
+
+export type EditableItemFields = {
+  time?: string;
+  title: string;
+  location: string;
+  notes?: string;
+  type: TripItem['type'];
 };
 
 export type ActiveScheduleState = {
