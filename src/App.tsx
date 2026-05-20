@@ -17,9 +17,21 @@ import {
 } from './utils/time';
 
 function statusClass(status?: ItemStatus) {
-  if (status === 'done') return 'border-emerald-300/70 bg-emerald-300/12';
-  if (status === 'skipped') return 'border-amber-300/70 bg-amber-300/12';
-  return 'border-white/10 bg-white/6';
+  if (status === 'done') return 'bg-[#30D158]/12';
+  if (status === 'skipped') return 'bg-[#1C1C1E]';
+  return 'bg-[#111111]';
+}
+
+function getDayPresentation(day: TripDay) {
+  if (day.label.toLowerCase().includes('departure') || day.label.toLowerCase().includes('travel')) {
+    return { title: 'Travel Day ✈️', symbol: '✈️' };
+  }
+
+  if (day.park === 'Magic Kingdom') return { title: 'Magic Kingdom Day 🏰', symbol: '🏰' };
+  if (day.park === 'EPCOT') return { title: 'EPCOT Day 🌐', symbol: '🌐' };
+  if (day.park === 'Hollywood Studios') return { title: 'Hollywood Studios Day 🎬', symbol: '🎬' };
+  if (day.park === 'Animal Kingdom') return { title: 'Animal Kingdom Day 🌿', symbol: '🌿' };
+  return { title: `${day.label} ✨`, symbol: '✨' };
 }
 
 function TodayScreen({
@@ -32,6 +44,7 @@ function TodayScreen({
   statuses,
   onCycleStatus,
   onEditItem,
+  onViewFullDay,
   attentionItems,
   phase,
   countdown,
@@ -39,6 +52,7 @@ function TodayScreen({
   statuses: Record<string, ItemStatus>;
   onCycleStatus: (id: string) => void;
   onEditItem: (dayId: string, item: TripItem) => void;
+  onViewFullDay: () => void;
   attentionItems: ReturnType<typeof getAttentionItems>;
   phase: ReturnType<typeof getTripPhase>;
   countdown: ReturnType<typeof getDepartureCountdown>;
@@ -57,36 +71,36 @@ function TodayScreen({
           <p>Departure is Friday, May 29 at 4:00 AM.</p>
         </ScreenHeader>
 
-        <section aria-labelledby="countdown-heading" className="px-4">
-          <div className="countdown-pulse rounded-[2rem] border border-lime-300/35 bg-lime-300/12 p-5 text-center shadow-2xl shadow-lime-950/20">
-            <p className="text-sm font-black uppercase tracking-wide text-lime-100">Disney Mayhem begins in... 🎢✨</p>
+        <section aria-labelledby="countdown-heading" className="section-rise px-4">
+          <div className="countdown-pulse rounded-[2rem] border border-[#0A84FF]/45 bg-[#1C1C1E] p-5 text-center shadow-2xl shadow-black/40">
+            <p className="text-sm font-black uppercase tracking-wide text-[#0A84FF]">Disney Mayhem begins in... 🎢✨</p>
             <h2 id="countdown-heading" className="sr-only">
               Live countdown to Disney Mayhem departure
             </h2>
-            <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4" aria-live="polite" aria-label="Live countdown to departure">
+            <div className="mt-5 flex flex-wrap justify-center gap-3" aria-live="polite" aria-label="Live countdown to departure">
               {countdownUnits.map((unit) => (
-                <div key={unit.label} className="rounded-[1.4rem] border border-white/14 bg-black/24 px-3 py-4">
-                  <div className="tabular-nums text-4xl font-black leading-none text-cyan-200 sm:text-5xl">
+                <div key={unit.label} className="min-w-[7.25rem] flex-1 rounded-[1.4rem] border border-[#2C2C2E] bg-[#111111] px-3 py-4 sm:flex-none">
+                  <div className="countdown-tick tabular-nums text-4xl font-black leading-none text-[#0A84FF] sm:text-5xl">
                     {String(unit.value).padStart(2, '0')}
                   </div>
                   <div className="mt-2 text-xs font-black uppercase tracking-wide text-white">{unit.label}</div>
                 </div>
               ))}
             </div>
-            <div className="mt-5 rounded-[1.4rem] bg-black/24 px-4 py-4">
-              <p className="text-sm font-black uppercase tracking-wide text-fuchsia-100">Trip title</p>
+            <div className="mt-5 rounded-[1.4rem] bg-[#111111] px-4 py-4">
+              <p className="text-sm font-black uppercase tracking-wide text-[#BF5AF2]">Trip title</p>
               <p className="mt-1 text-2xl font-black text-white">{day.label}</p>
-              <p className="mt-2 text-base font-bold text-lime-100">Starting park: EPCOT</p>
+              <p className="mt-2 text-base font-bold text-[#A1A1A6]">Starting park: EPCOT</p>
             </div>
             {nextItem ? (
-              <p className="mt-4 rounded-full bg-cyan-300 px-4 py-3 text-base font-black text-slate-950">
+              <p className="mt-4 rounded-full bg-[#0A84FF] px-4 py-3 text-base font-black text-black">
                 First up: {formatTimeRange(nextItem)} · {nextItem.title}
               </p>
             ) : null}
           </div>
         </section>
 
-        <section aria-labelledby="prep-heading" className="mt-5 px-4 pb-6">
+        <section aria-labelledby="prep-heading" className="section-rise mt-5 px-4 pb-6">
           <h2 id="prep-heading" className="mb-3 text-lg font-black text-white">
             Prep Focus
           </h2>
@@ -115,13 +129,13 @@ function TodayScreen({
           </p>
         </ScreenHeader>
 
-        <section aria-labelledby="memory-heading" className="px-4 pb-6">
-          <div className="rounded-[2rem] border border-fuchsia-300/35 bg-fuchsia-300/12 p-5">
-            <p className="text-sm font-black uppercase tracking-wide text-fuchsia-100">Memory view</p>
+        <section aria-labelledby="memory-heading" className="section-rise px-4 pb-6">
+          <div className="rounded-[2rem] border border-[#BF5AF2]/45 bg-[#1C1C1E] p-5">
+            <p className="text-sm font-black uppercase tracking-wide text-[#BF5AF2]">Memory view</p>
             <h2 id="memory-heading" className="mt-3 text-2xl font-black text-white">
               {formatDateLabel(tripStartDate)} through {formatDateLabel(tripEndDate)}
             </h2>
-            <p className="mt-2 text-base leading-7 text-slate-100">
+            <p className="mt-2 text-base leading-7 text-white">
               Review the finished timeline, keep notes, and mark favorite moments as done.
             </p>
           </div>
@@ -132,31 +146,41 @@ function TodayScreen({
 
   const nowItem = activeItem;
   const laterItems = upcomingItems.filter((item) => item.id !== nextItem?.id).slice(0, 3);
+  const dayPresentation = getDayPresentation(day);
 
   return (
     <>
-      <ScreenHeader eyebrow={isToday ? 'Right now' : 'Trip preview'} title="Disney Mayhem">
-        <p>
-          {formatDateLabel(day.date)} · {day.park}
-        </p>
-      </ScreenHeader>
+      <header className="section-rise px-4 pb-8 pt-6">
+        <div className="relative overflow-hidden rounded-[2.2rem] bg-[#111111] px-6 py-8 shadow-2xl shadow-black/40">
+          <div className="absolute -right-6 -top-8 select-none text-[8rem] opacity-25 blur-sm" aria-hidden="true">
+            {dayPresentation.symbol}
+          </div>
+          <div className="absolute inset-0 bg-black/25" aria-hidden="true" />
+          <div className="relative">
+            <p className="text-[12px] font-black uppercase tracking-[0.18em] text-[#0A84FF]">{isToday ? 'Today' : 'Trip preview'}</p>
+            <h1 className="mt-4 text-[36px] font-black leading-[1.02] text-white sm:text-[44px]">{dayPresentation.title}</h1>
+            <p className="mt-3 text-[16px] font-semibold text-[#A1A1A6]">{formatDateLabel(day.date)}</p>
+          </div>
+        </div>
+      </header>
 
-      <section aria-labelledby="now-heading" className="px-4">
-        <div className="rounded-[2.2rem] border border-fuchsia-300/40 bg-fuchsia-300/14 p-6 text-center shadow-2xl shadow-fuchsia-950/30">
-          <p className="text-sm font-black uppercase tracking-wide text-fuchsia-100">Now</p>
-          <h2 id="now-heading" className="mt-3 text-3xl font-black leading-tight text-white sm:text-4xl">
+      <section aria-labelledby="now-heading" className="section-rise px-4">
+        <div className="rounded-[2.4rem] bg-[#1C1C1E] px-6 py-12 text-center shadow-[0_0_60px_rgba(10,132,255,0.14)] sm:px-10 sm:py-14">
+          <p className="text-[13px] font-black uppercase tracking-[0.18em] text-[#BF5AF2]">Now</p>
+          <h2 id="now-heading" className="mx-auto mt-5 max-w-2xl text-[40px] font-black leading-[1.02] text-white sm:text-[48px]">
             {nowItem ? nowItem.title : 'Open time'}
           </h2>
-          <p className="mx-auto mt-3 max-w-xl text-lg font-bold leading-7 text-slate-100">
+          <p className="mx-auto mt-5 max-w-xl text-[16px] font-semibold leading-7 text-[#A1A1A6]">
             {nowItem
               ? nowItem.type === 'flexible'
                 ? `${nowItem.area} · ${formatTimeRange(nowItem)}`
                 : `${nowItem.location} · ${formatTimeRange(nowItem)}`
               : 'No fixed item is active. Breathe, hydrate, and use Next when ready.'}
           </p>
+          {nowItem?.notes ? <p className="mx-auto mt-4 max-w-xl text-[15px] leading-6 text-[#A1A1A6]">{nowItem.notes}</p> : null}
 
           {nextActivity ? (
-            <div className="mx-auto mt-5 max-w-md rounded-full bg-lime-300 px-5 py-3 text-base font-black text-slate-950">
+            <div className="mx-auto mt-7 max-w-md rounded-full bg-[#0A84FF] px-5 py-3 text-[16px] font-black text-black">
               Next: {nextActivity.title}
             </div>
           ) : null}
@@ -165,7 +189,7 @@ function TodayScreen({
             <button
               type="button"
               onClick={() => onEditItem(day.id, nowItem)}
-              className="mt-5 min-h-11 rounded-full border border-white/20 bg-white/8 px-4 py-2 text-sm font-black text-white focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-cyan-200"
+              className="mt-7 min-h-11 rounded-full bg-[#111111] px-5 py-2 text-[14px] font-black text-white focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]"
             >
               Edit
             </button>
@@ -173,22 +197,22 @@ function TodayScreen({
         </div>
       </section>
 
-      <section aria-labelledby="next-heading" className="mt-8 px-4">
-        <h2 id="next-heading" className="mb-3 text-sm font-black uppercase tracking-wide text-cyan-100">
+      <section aria-labelledby="next-heading" className="section-rise mt-12 px-4">
+        <h2 id="next-heading" className="mb-4 text-[13px] font-black uppercase tracking-[0.18em] text-[#0A84FF]">
           Next
         </h2>
         {nextItem && nextItem.id !== activeItem?.id ? (
-          <div className="rounded-[1.7rem] border border-cyan-300/30 bg-cyan-300/10 p-4">
+          <div className="rounded-[1.8rem] bg-[#1C1C1E] p-5">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-sm font-black uppercase tracking-wide text-cyan-100">{formatTimeRange(nextItem)}</p>
-                <h3 className="mt-1 text-2xl font-black text-white">{nextItem.title}</h3>
-                <p className="mt-1 text-sm font-semibold text-slate-300">{nextItem.type === 'flexible' ? nextItem.area : nextItem.location}</p>
+                <p className="text-[13px] font-black uppercase tracking-[0.16em] text-[#0A84FF]">{formatTimeRange(nextItem)}</p>
+                <h3 className="mt-2 text-[22px] font-black leading-tight text-white">{nextItem.title}</h3>
+                <p className="mt-2 text-[15px] font-semibold text-[#A1A1A6]">{nextItem.type === 'flexible' ? nextItem.area : nextItem.location}</p>
               </div>
               <button
                 type="button"
                 onClick={() => onEditItem(day.id, nextItem)}
-                className="min-h-11 min-w-11 rounded-full border border-white/20 bg-white/8 px-3 text-lg font-black text-white focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-cyan-200"
+                className="ios-icon-button"
                 aria-label={`Edit ${nextItem.title}`}
                 title="Edit"
               >
@@ -197,20 +221,42 @@ function TodayScreen({
             </div>
           </div>
         ) : (
-          <div className="rounded-[1.7rem] border border-white/10 bg-white/8 p-4 text-slate-200">Nothing queued up yet.</div>
+          <div className="rounded-[1.8rem] bg-[#1C1C1E] p-5 text-[15px] text-[#A1A1A6]">Nothing queued up yet.</div>
         )}
       </section>
 
-      <section aria-labelledby="later-heading" className="mt-8 px-4 pb-6">
-        <h2 id="later-heading" className="mb-3 text-sm font-black uppercase tracking-wide text-slate-300">
+      <section aria-labelledby="later-heading" className="section-rise mt-12 px-4 pb-8">
+        <h2 id="later-heading" className="mb-4 text-[13px] font-black uppercase tracking-[0.18em] text-[#A1A1A6]">
           Later
         </h2>
-        <div className="space-y-2">
+        <ul className="space-y-1" aria-label="Later today">
           {laterItems.map((item) => (
-            <CompactItem key={item.id} item={item} statuses={statuses} onEdit={() => onEditItem(day.id, item)} />
+            <li key={item.id} className="flex min-h-16 items-center justify-between gap-4 rounded-[1.25rem] px-1 py-3">
+              <div>
+                <p className="text-[12px] font-black uppercase tracking-[0.16em] text-[#A1A1A6]">{formatTimeRange(item)}</p>
+                <h3 className="mt-1 text-[18px] font-black leading-tight text-white">{item.title}</h3>
+                <p className="mt-1 text-[14px] text-[#A1A1A6]">{item.type === 'flexible' ? item.area : item.location}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => onEditItem(day.id, item)}
+                className="ios-icon-button"
+                aria-label={`Edit ${item.title}`}
+                title="Edit"
+              >
+                ✎
+              </button>
+            </li>
           ))}
-          {laterItems.length === 0 ? <p className="rounded-[1.4rem] border border-white/10 bg-white/6 p-4 text-slate-300">No later items for this day.</p> : null}
-        </div>
+          {laterItems.length === 0 ? <li className="rounded-[1.4rem] bg-[#111111] p-4 text-[15px] text-[#A1A1A6]">No later items for this day.</li> : null}
+        </ul>
+        <button
+          type="button"
+          onClick={onViewFullDay}
+          className="mt-6 min-h-12 w-full rounded-full bg-[#0A84FF] px-5 py-3 text-[16px] font-black text-black focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF] sm:w-auto"
+        >
+          View Full Day
+        </button>
       </section>
     </>
   );
@@ -231,17 +277,17 @@ function CompactItem({
   const nextActivity = findNextActivity(item, statuses);
 
   return (
-    <article className={`rounded-[1.4rem] border p-4 ${item.type === 'flexible' ? 'border-cyan-300/30 bg-cyan-300/10' : statusClass(status)}`}>
+    <article className={`py-4 ${item.type === 'flexible' ? 'rounded-[1.5rem] bg-[#1C1C1E] p-4' : ''}`}>
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-sm font-black uppercase tracking-wide text-lime-200">{eyebrow ?? formatTimeRange(item)}</p>
-          <h3 className="mt-1 text-lg font-black text-white">{item.title}</h3>
+          <p className="text-[12px] font-black uppercase tracking-[0.16em] text-[#A1A1A6]">{eyebrow ?? formatTimeRange(item)}</p>
+          <h3 className="mt-2 text-[19px] font-black leading-tight text-white">{item.title}</h3>
         </div>
         {onEdit ? (
           <button
             type="button"
             onClick={onEdit}
-            className="min-h-11 min-w-11 rounded-full border border-white/20 bg-white/8 px-3 text-lg font-black text-white focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-cyan-200"
+            className="ios-icon-button"
             aria-label={`Edit ${item.title}`}
             title="Edit"
           >
@@ -249,8 +295,8 @@ function CompactItem({
           </button>
         ) : null}
       </div>
-      <p className="mt-1 text-sm text-slate-300">{item.type === 'flexible' ? item.area : item.location}</p>
-      {nextActivity ? <p className="mt-2 text-sm font-bold text-fuchsia-100">Next: {nextActivity.title}</p> : null}
+      <p className="mt-2 text-[15px] text-[#A1A1A6]">{item.type === 'flexible' ? item.area : item.location}</p>
+      {nextActivity ? <p className="mt-3 text-[14px] font-bold text-[#BF5AF2]">Next: {nextActivity.title}</p> : null}
     </article>
   );
 }
@@ -269,25 +315,25 @@ function AttentionScreen({
       <ScreenHeader eyebrow="Needs decisions" title="Attention Needed">
         Reservations, multi-pass details, queue links, and open meal choices from the source itinerary.
       </ScreenHeader>
-      <main className="space-y-3 px-4 pb-6">
+      <main className="screen-fade space-y-2 px-4 pb-6">
         {attentionItems.map(({ day, item }) => (
-          <article key={item.id} className={`rounded-[1.6rem] border border-amber-300/40 bg-amber-300/12 p-4 ${statusClass(statuses[item.id])}`}>
-            <p className="text-sm font-black uppercase tracking-wide text-amber-100">{formatDateLabel(day.date)}</p>
+          <article key={item.id} className={`py-4 ${item.type === 'flexible' ? 'rounded-[1.6rem] bg-[#1C1C1E] p-4' : ''}`}>
+            <p className="text-sm font-black uppercase tracking-wide text-[#FF9F0A]">{formatDateLabel(day.date)}</p>
             <div className="mt-1 flex items-start justify-between gap-3">
               <h2 className="text-xl font-black text-white">{item.title}</h2>
               <button
                 type="button"
                 onClick={() => onEditItem(day.id, item)}
-                className="min-h-11 min-w-11 rounded-full border border-white/20 bg-white/8 px-3 text-lg font-black text-white focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-cyan-200"
+                className="ios-icon-button"
                 aria-label={`Edit ${item.title}`}
                 title="Edit"
               >
                 ✎
               </button>
             </div>
-            <p className="mt-1 font-semibold text-slate-200">{formatTimeRange(item)}</p>
-            <p className="mt-1 text-sm text-slate-300">{item.type === 'flexible' ? item.area : item.location}</p>
-            {item.notes ? <p className="mt-3 rounded-2xl bg-black/20 p-3 text-sm font-bold text-amber-50">{item.notes}</p> : null}
+            <p className="mt-1 font-semibold text-[#A1A1A6]">{formatTimeRange(item)}</p>
+            <p className="mt-1 text-sm text-[#A1A1A6]">{item.type === 'flexible' ? item.area : item.location}</p>
+            {item.notes ? <p className="mt-3 text-sm font-bold text-[#FF9F0A]">{item.notes}</p> : null}
           </article>
         ))}
       </main>
@@ -329,11 +375,11 @@ function ItemEditorSheet({
         role="dialog"
         aria-modal="true"
         aria-labelledby="item-editor-title"
-        className="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-[2rem] border border-white/14 bg-slate-950 p-5 shadow-2xl shadow-black"
+        className="screen-fade max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-[2rem] border border-[#2C2C2E] bg-[#111111] p-5 shadow-2xl shadow-black"
       >
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-sm font-black uppercase tracking-wide text-cyan-200">{editor.mode === 'add' ? 'Add itinerary item' : 'Edit itinerary item'}</p>
+            <p className="text-sm font-black uppercase tracking-wide text-[#0A84FF]">{editor.mode === 'add' ? 'Add itinerary item' : 'Edit itinerary item'}</p>
             <h2 id="item-editor-title" className="mt-1 text-2xl font-black text-white">
               {editor.mode === 'add' ? 'New item' : draft.title || 'Untitled item'}
             </h2>
@@ -341,7 +387,7 @@ function ItemEditorSheet({
           <button
             type="button"
             onClick={onCancel}
-            className="min-h-11 min-w-11 rounded-full border border-white/20 bg-white/8 text-xl font-black text-white focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-cyan-200"
+            className="ios-icon-button"
             aria-label="Close editor"
           >
             ×
@@ -350,11 +396,11 @@ function ItemEditorSheet({
 
         <div className="mt-5 space-y-4">
           <label className="block">
-            <span className="text-sm font-black uppercase tracking-wide text-slate-200">Type</span>
+            <span className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Type</span>
             <select
               value={draft.type}
               onChange={(event) => onChange({ ...draft, type: event.target.value as TripItem['type'] })}
-              className="mt-2 min-h-12 w-full rounded-2xl border border-white/14 bg-black/30 px-4 text-lg font-bold text-white outline-none focus:border-cyan-200 focus:ring-4 focus:ring-cyan-200/30"
+              className="mt-2 min-h-12 w-full rounded-2xl border border-[#2C2C2E] bg-[#111111] px-4 text-lg font-bold text-white outline-none focus:border-[#0A84FF] focus:ring-4 focus:ring-[#0A84FF]/30"
             >
               <option value="scheduled">Scheduled</option>
               <option value="flexible">Flexible</option>
@@ -362,39 +408,39 @@ function ItemEditorSheet({
           </label>
 
           <label className="block">
-            <span className="text-sm font-black uppercase tracking-wide text-slate-200">Time</span>
+            <span className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Time</span>
             <input
               type="time"
               value={draft.time ?? ''}
               onChange={(event) => onChange({ ...draft, time: event.target.value })}
-              className="mt-2 min-h-12 w-full rounded-2xl border border-white/14 bg-black/30 px-4 text-lg font-bold text-white outline-none focus:border-cyan-200 focus:ring-4 focus:ring-cyan-200/30"
+              className="mt-2 min-h-12 w-full rounded-2xl border border-[#2C2C2E] bg-[#111111] px-4 text-lg font-bold text-white outline-none focus:border-[#0A84FF] focus:ring-4 focus:ring-[#0A84FF]/30"
             />
           </label>
 
           <label className="block">
-            <span className="text-sm font-black uppercase tracking-wide text-slate-200">Title</span>
+            <span className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Title</span>
             <input
               value={draft.title}
               onChange={(event) => onChange({ ...draft, title: event.target.value })}
-              className="mt-2 min-h-12 w-full rounded-2xl border border-white/14 bg-black/30 px-4 text-lg font-bold text-white outline-none focus:border-cyan-200 focus:ring-4 focus:ring-cyan-200/30"
+              className="mt-2 min-h-12 w-full rounded-2xl border border-[#2C2C2E] bg-[#111111] px-4 text-lg font-bold text-white outline-none focus:border-[#0A84FF] focus:ring-4 focus:ring-[#0A84FF]/30"
             />
           </label>
 
           <label className="block">
-            <span className="text-sm font-black uppercase tracking-wide text-slate-200">Location</span>
+            <span className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Location</span>
             <input
               value={draft.location}
               onChange={(event) => onChange({ ...draft, location: event.target.value })}
-              className="mt-2 min-h-12 w-full rounded-2xl border border-white/14 bg-black/30 px-4 text-lg font-bold text-white outline-none focus:border-cyan-200 focus:ring-4 focus:ring-cyan-200/30"
+              className="mt-2 min-h-12 w-full rounded-2xl border border-[#2C2C2E] bg-[#111111] px-4 text-lg font-bold text-white outline-none focus:border-[#0A84FF] focus:ring-4 focus:ring-[#0A84FF]/30"
             />
           </label>
 
           <label className="block">
-            <span className="text-sm font-black uppercase tracking-wide text-slate-200">Notes</span>
+            <span className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Notes</span>
             <textarea
               value={draft.notes ?? ''}
               onChange={(event) => onChange({ ...draft, notes: event.target.value })}
-              className="mt-2 min-h-28 w-full rounded-2xl border border-white/14 bg-black/30 px-4 py-3 text-lg font-bold text-white outline-none focus:border-cyan-200 focus:ring-4 focus:ring-cyan-200/30"
+              className="mt-2 min-h-28 w-full rounded-2xl border border-[#2C2C2E] bg-[#111111] px-4 py-3 text-lg font-bold text-white outline-none focus:border-[#0A84FF] focus:ring-4 focus:ring-[#0A84FF]/30"
             />
           </label>
         </div>
@@ -404,7 +450,7 @@ function ItemEditorSheet({
             <button
               type="button"
               onClick={onDelete}
-              className="min-h-12 rounded-full border border-rose-300/60 bg-rose-300/15 px-5 py-2 font-black text-rose-100 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-rose-200"
+              className="min-h-12 rounded-full border border-[#FF453A] bg-[#1C1C1E] px-5 py-2 font-black text-[#FF453A] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#FF453A]"
             >
               Delete
             </button>
@@ -415,14 +461,14 @@ function ItemEditorSheet({
             <button
               type="button"
               onClick={onCancel}
-              className="min-h-12 rounded-full border border-white/20 bg-white/8 px-5 py-2 font-black text-white focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-cyan-200"
+              className="min-h-12 rounded-full border border-[#3A3A3C] bg-[#1C1C1E] px-5 py-2 font-black text-white focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]"
             >
               Cancel
             </button>
             <button
               type="button"
               onClick={onSave}
-              className="min-h-12 rounded-full bg-lime-300 px-5 py-2 font-black text-slate-950 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-lime-100"
+              className="min-h-12 rounded-full bg-[#0A84FF] px-5 py-2 font-black text-black focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]"
             >
               Save
             </button>
@@ -447,18 +493,18 @@ function DayTimeline({
   onAddItem: (dayId: string) => void;
 }) {
   return (
-    <section aria-labelledby={`${day.id}-heading`} className="px-4 py-4">
+    <section aria-labelledby={`${day.id}-heading`} className="section-rise px-4 py-4">
       <div className="mb-3">
-        <p className="text-sm font-black uppercase tracking-wide text-fuchsia-200">{formatDateLabel(day.date)}</p>
+        <p className="text-sm font-black uppercase tracking-wide text-[#0A84FF]">{formatDateLabel(day.date)}</p>
         <h2 id={`${day.id}-heading`} className="text-2xl font-black text-white">
           {day.label}
         </h2>
-        <p className="text-sm font-semibold text-slate-300">{day.park}</p>
+        <p className="text-sm font-semibold text-[#A1A1A6]">{day.park}</p>
       </div>
       <button
         type="button"
         onClick={() => onAddItem(day.id)}
-        className="mb-3 min-h-11 rounded-full bg-cyan-300 px-4 py-2 text-sm font-black text-slate-950 transition hover:bg-cyan-200 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-cyan-200"
+        className="mb-3 min-h-11 rounded-full bg-[#0A84FF] px-4 py-2 text-sm font-black text-black transition hover:bg-[#409CFF] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]"
       >
         Add item
       </button>
@@ -508,24 +554,24 @@ function ReservationsScreen({
   return (
     <>
       <ScreenHeader eyebrow="Fixed plans" title="Reservations" />
-      <main className="space-y-3 px-4 pb-6">
+      <main className="screen-fade space-y-2 px-4 pb-6">
         {reservations.map(({ day, item }) => (
-          <article key={item.id} className={`rounded-[1.6rem] border p-4 ${statusClass(statuses[item.id])}`}>
-            <p className="text-sm font-black uppercase tracking-wide text-lime-200">{formatDateLabel(day.date)}</p>
+          <article key={item.id} className="py-4">
+            <p className="text-sm font-black uppercase tracking-wide text-[#0A84FF]">{formatDateLabel(day.date)}</p>
             <div className="mt-1 flex items-start justify-between gap-3">
               <h2 className="text-xl font-black text-white">{item.title}</h2>
               <button
                 type="button"
                 onClick={() => onEditItem(day.id, item)}
-                className="min-h-11 min-w-11 rounded-full border border-white/20 bg-white/8 px-3 text-lg font-black text-white focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-cyan-200"
+                className="ios-icon-button"
                 aria-label={`Edit ${item.title}`}
                 title="Edit"
               >
                 ✎
               </button>
             </div>
-            <p className="mt-1 font-semibold text-slate-200">{formatTimeRange(item)}</p>
-            <p className="mt-1 text-sm text-slate-300">{item.location}</p>
+            <p className="mt-1 font-semibold text-[#A1A1A6]">{formatTimeRange(item)}</p>
+            <p className="mt-1 text-sm text-[#A1A1A6]">{item.location}</p>
           </article>
         ))}
       </main>
@@ -547,15 +593,15 @@ function NotesScreen({
       <ScreenHeader eyebrow="Family notes" title="Notes">
         Saved on this device for quick reminders.
       </ScreenHeader>
-      <main className="space-y-4 px-4 pb-6">
+      <main className="screen-fade space-y-4 px-4 pb-6">
         {days.map((day) => (
-          <label key={day.id} className="block rounded-[1.6rem] border border-white/10 bg-white/8 p-4">
+          <label key={day.id} className="block rounded-[1.6rem] border border-[#2C2C2E] bg-[#1C1C1E] p-4">
             <span className="block text-lg font-black text-white">{day.label}</span>
-            <span className="mt-1 block text-sm text-slate-300">{formatDateLabel(day.date)}</span>
+            <span className="mt-1 block text-sm text-[#A1A1A6]">{formatDateLabel(day.date)}</span>
             <textarea
               value={notes[day.id] ?? ''}
               onChange={(event) => setNote(day.id, event.target.value)}
-              className="mt-3 min-h-28 w-full rounded-3xl border border-white/14 bg-slate-950 px-4 py-3 text-base text-white outline-none focus:border-cyan-200 focus:ring-4 focus:ring-cyan-200/30"
+              className="mt-3 min-h-28 w-full rounded-3xl border border-[#2C2C2E] bg-[#111111] px-4 py-3 text-base text-white outline-none focus:border-[#0A84FF] focus:ring-4 focus:ring-[#0A84FF]/30"
               placeholder="Add reminders, mobile order ideas, kid notes, or backup plans."
             />
           </label>
@@ -629,14 +675,15 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#070816] text-white">
-      <div className="mx-auto max-w-4xl pb-20">
+    <div className="min-h-screen bg-[#000000] text-white">
+      <div key={activeTab} className="screen-fade mx-auto max-w-4xl pb-20">
         {activeTab === 'today' ? (
           <TodayScreen
             {...activeState}
             statuses={tripStorage.statuses}
             onCycleStatus={tripStorage.cycleStatus}
             onEditItem={openEditItem}
+            onViewFullDay={() => setActiveTab('days')}
             attentionItems={attentionItems}
             phase={phase}
             countdown={countdown}
