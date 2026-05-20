@@ -72,28 +72,23 @@ function TodayScreen({
         </ScreenHeader>
 
         <section aria-labelledby="countdown-heading" className="section-rise px-4">
-          <div className="countdown-pulse rounded-[2rem] border border-[#0A84FF]/45 bg-[#1C1C1E] p-5 text-center shadow-2xl shadow-black/40">
-            <p className="text-sm font-black uppercase tracking-wide text-[#0A84FF]">Disney Mayhem begins in... 🎢✨</p>
+          <div className="rounded-[2rem] bg-[#111111] px-5 py-8 text-center shadow-2xl shadow-black/30 sm:px-8 sm:py-10">
+            <p className="text-[13px] font-black uppercase tracking-[0.18em] text-white">Disney Mayhem begins in...</p>
             <h2 id="countdown-heading" className="sr-only">
               Live countdown to Disney Mayhem departure
             </h2>
-            <div className="mt-5 flex flex-wrap justify-center gap-3" aria-live="polite" aria-label="Live countdown to departure">
+            <div className="mt-8 flex flex-wrap justify-center gap-x-6 gap-y-7" aria-live="polite" aria-label="Live countdown to departure">
               {countdownUnits.map((unit) => (
-                <div key={unit.label} className="min-w-[7.25rem] flex-1 rounded-[1.4rem] border border-[#2C2C2E] bg-[#111111] px-3 py-4 sm:flex-none">
-                  <div className="countdown-tick tabular-nums text-4xl font-black leading-none text-[#0A84FF] sm:text-5xl">
+                <div key={unit.label} className="basis-[calc(50%-0.75rem)] sm:basis-auto">
+                  <div className="tabular-nums font-black leading-none text-[#0A84FF] [font-size:clamp(2.8rem,12vw,5.5rem)]">
                     {String(unit.value).padStart(2, '0')}
                   </div>
-                  <div className="mt-2 text-xs font-black uppercase tracking-wide text-white">{unit.label}</div>
+                  <div className="mt-3 text-[12px] font-black uppercase tracking-[0.16em] text-[#A1A1A6]">{unit.label}</div>
                 </div>
               ))}
             </div>
-            <div className="mt-5 rounded-[1.4rem] bg-[#111111] px-4 py-4">
-              <p className="text-sm font-black uppercase tracking-wide text-[#BF5AF2]">Trip title</p>
-              <p className="mt-1 text-2xl font-black text-white">{day.label}</p>
-              <p className="mt-2 text-base font-bold text-[#A1A1A6]">Starting park: EPCOT</p>
-            </div>
             {nextItem ? (
-              <p className="mt-4 rounded-full bg-[#0A84FF] px-4 py-3 text-base font-black text-black">
+              <p className="mt-9 text-[15px] font-semibold text-[#A1A1A6]">
                 First up: {formatTimeRange(nextItem)} · {nextItem.title}
               </p>
             ) : null}

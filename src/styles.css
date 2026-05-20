@@ -84,14 +84,6 @@ button:active {
   animation: section-rise 340ms ease-out both;
 }
 
-.countdown-tick {
-  animation: countdown-tick 1s ease-in-out infinite;
-}
-
-.countdown-pulse {
-  animation: countdown-pulse 1s ease-in-out infinite;
-}
-
 @keyframes screen-fade {
   from {
     opacity: 0;
@@ -114,30 +106,6 @@ button:active {
   }
 }
 
-@keyframes countdown-tick {
-  0%,
-  100% {
-    transform: scale(1);
-  }
-
-  50% {
-    transform: scale(1.025);
-  }
-}
-
-@keyframes countdown-pulse {
-  0%,
-  100% {
-    box-shadow: 0 24px 60px rgba(10, 132, 255, 0.16);
-    transform: scale(1);
-  }
-
-  50% {
-    box-shadow: 0 28px 72px rgba(10, 132, 255, 0.26);
-    transform: scale(1.006);
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -148,13 +116,8 @@ button:active {
     animation-iteration-count: 1 !important;
   }
 
-  .countdown-pulse {
-    animation: none !important;
-  }
-
   .screen-fade,
-  .section-rise,
-  .countdown-tick {
+  .section-rise {
     animation: none !important;
   }
 
