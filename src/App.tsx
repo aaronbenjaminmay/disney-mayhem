@@ -12,6 +12,7 @@ import {
   formatTimeRange,
   getActiveScheduleState,
   getDepartureCountdown,
+  getItemStart,
   getItemStatusKey,
   getTripPhase,
 } from './utils/time';
@@ -20,6 +21,19 @@ function statusClass(status?: ItemStatus) {
   if (status === 'done') return 'bg-[#30D158]/12';
   if (status === 'skipped') return 'bg-[#1C1C1E]';
   return 'bg-[#111111]';
+}
+
+function itemNeedsAttention(item: TripItem) {
+  const text = `${item.title} ${item.location} ${item.notes ?? ''}`.toLowerCase();
+  return Boolean(item.needsAttention) || text.includes('need reservation') || text.includes('insert multi-pass') || text.includes('add queue link');
+}
+
+function getTimeOfDay(item: TripItem) {
+  if (!item.time) return 'Flexible';
+  const minutes = getItemStart(item);
+  if (minutes < 12 * 60) return 'Morning';
+  if (minutes < 17 * 60) return 'Afternoon';
+  return 'Evening';
 }
 
 function getDayPresentation(day: TripDay) {
@@ -197,7 +211,7 @@ function TodayScreen({
           Next
         </h2>
         {nextItem && nextItem.id !== activeItem?.id ? (
-          <div className="rounded-[1.8rem] bg-[#1C1C1E] p-5">
+          <div className="border-y border-[#2C2C2E]/70 py-5">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-[13px] font-black uppercase tracking-[0.16em] text-[#0A84FF]">{formatTimeRange(nextItem)}</p>
@@ -216,7 +230,7 @@ function TodayScreen({
             </div>
           </div>
         ) : (
-          <div className="rounded-[1.8rem] bg-[#1C1C1E] p-5 text-[15px] text-[#A1A1A6]">Nothing queued up yet.</div>
+          <div className="border-y border-[#2C2C2E]/70 py-5 text-[15px] text-[#A1A1A6]">Nothing queued up yet.</div>
         )}
       </section>
 
@@ -224,7 +238,7 @@ function TodayScreen({
         <h2 id="later-heading" className="mb-4 text-[13px] font-black uppercase tracking-[0.18em] text-[#A1A1A6]">
           Later
         </h2>
-        <ul className="space-y-1" aria-label="Later today">
+        <ul className="divide-y divide-[#2C2C2E]/70" aria-label="Later today">
           {laterItems.map((item) => (
             <li key={item.id} className="flex min-h-16 items-center justify-between gap-4 rounded-[1.25rem] px-1 py-3">
               <div>
@@ -245,13 +259,15 @@ function TodayScreen({
           ))}
           {laterItems.length === 0 ? <li className="rounded-[1.4rem] bg-[#111111] p-4 text-[15px] text-[#A1A1A6]">No later items for this day.</li> : null}
         </ul>
-        <button
-          type="button"
-          onClick={onViewFullDay}
-          className="mt-6 min-h-12 w-full rounded-full bg-[#0A84FF] px-5 py-3 text-[16px] font-black text-black focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF] sm:w-auto"
-        >
-          View Full Day
-        </button>
+        <div className="mt-6 border-t border-[#2C2C2E]/70 pt-6">
+          <button
+            type="button"
+            onClick={onViewFullDay}
+            className="min-h-12 w-full rounded-full bg-[#0A84FF] px-5 py-3 text-[16px] font-black text-black focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF] sm:w-auto"
+          >
+            View Full Day
+          </button>
+        </div>
       </section>
     </>
   );
@@ -310,7 +326,8 @@ function AttentionScreen({
       <ScreenHeader eyebrow="Needs decisions" title="Attention Needed">
         Reservations, multi-pass details, queue links, and open meal choices from the source itinerary.
       </ScreenHeader>
-      <main className="screen-fade space-y-2 px-4 pb-6">
+      <main className="screen-fade px-4 pb-6">
+        <div className="divide-y divide-[#2C2C2E]/70">
         {attentionItems.map(({ day, item }) => (
           <article key={item.id} className={`py-4 ${item.type === 'flexible' ? 'rounded-[1.6rem] bg-[#1C1C1E] p-4' : ''}`}>
             <p className="text-sm font-black uppercase tracking-wide text-[#FF9F0A]">{formatDateLabel(day.date)}</p>
@@ -331,6 +348,7 @@ function AttentionScreen({
             {item.notes ? <p className="mt-3 text-sm font-bold text-[#FF9F0A]">{item.notes}</p> : null}
           </article>
         ))}
+        </div>
       </main>
     </>
   );
@@ -487,25 +505,57 @@ function DayTimeline({
   onEditItem: (dayId: string, item: TripItem) => void;
   onAddItem: (dayId: string) => void;
 }) {
+  const attentionCount = day.items.filter(itemNeedsAttention).length;
+  const groups = ['Morning', 'Afternoon', 'Evening', 'Flexible']
+    .map((label) => ({
+      label,
+      items: day.items.filter((item) => getTimeOfDay(item) === label),
+    }))
+    .filter((group) => group.items.length > 0);
+
   return (
-    <section aria-labelledby={`${day.id}-heading`} className="section-rise px-4 py-4">
-      <div className="mb-3">
-        <p className="text-sm font-black uppercase tracking-wide text-[#0A84FF]">{formatDateLabel(day.date)}</p>
-        <h2 id={`${day.id}-heading`} className="text-2xl font-black text-white">
-          {day.label}
-        </h2>
-        <p className="text-sm font-semibold text-[#A1A1A6]">{day.park}</p>
+    <section aria-labelledby={`${day.id}-heading`} className="section-rise px-4 py-8">
+      <div className="mb-5 rounded-[1.5rem] bg-[#111111] px-4 py-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-[12px] font-black uppercase tracking-[0.16em] text-[#0A84FF]">{formatDateLabel(day.date)}</p>
+            <h2 id={`${day.id}-heading`} className="mt-2 text-[26px] font-black leading-tight text-white">
+              {day.label}
+            </h2>
+            <p className="mt-1 text-[15px] font-semibold text-[#A1A1A6]">{day.park}</p>
+          </div>
+          {attentionCount > 0 ? (
+            <p className="rounded-full bg-[#FF9F0A] px-3 py-1 text-[12px] font-black text-black">
+              {attentionCount} attention
+            </p>
+          ) : null}
+        </div>
       </div>
       <button
         type="button"
         onClick={() => onAddItem(day.id)}
-        className="mb-3 min-h-11 rounded-full bg-[#0A84FF] px-4 py-2 text-sm font-black text-black transition hover:bg-[#409CFF] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]"
+        className="mb-5 min-h-11 rounded-full bg-[#0A84FF] px-4 py-2 text-sm font-black text-black transition hover:bg-[#409CFF] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]"
       >
         Add item
       </button>
-      <div className="space-y-3">
-        {day.items.map((item) => (
-          <ItemCard key={item.id} item={item} statuses={statuses} onCycleStatus={onCycleStatus} onEdit={(selectedItem) => onEditItem(day.id, selectedItem)} />
+      <div className="space-y-8">
+        {groups.map((group) => (
+          <section key={group.label} aria-label={`${day.label} ${group.label}`} className="space-y-3">
+            <h3 className="border-b border-[#2C2C2E]/70 pb-2 text-[12px] font-black uppercase tracking-[0.18em] text-[#A1A1A6]">
+              {group.label}
+            </h3>
+            <div className="divide-y divide-[#2C2C2E]/70">
+              {group.items.map((item) => (
+                <ItemCard
+                  key={item.id}
+                  item={item}
+                  statuses={statuses}
+                  onCycleStatus={onCycleStatus}
+                  onEdit={(selectedItem) => onEditItem(day.id, selectedItem)}
+                />
+              ))}
+            </div>
+          </section>
         ))}
       </div>
     </section>
@@ -549,7 +599,8 @@ function ReservationsScreen({
   return (
     <>
       <ScreenHeader eyebrow="Fixed plans" title="Reservations" />
-      <main className="screen-fade space-y-2 px-4 pb-6">
+      <main className="screen-fade px-4 pb-6">
+        <div className="divide-y divide-[#2C2C2E]/70">
         {reservations.map(({ day, item }) => (
           <article key={item.id} className="py-4">
             <p className="text-sm font-black uppercase tracking-wide text-[#0A84FF]">{formatDateLabel(day.date)}</p>
@@ -569,6 +620,7 @@ function ReservationsScreen({
             <p className="mt-1 text-sm text-[#A1A1A6]">{item.location}</p>
           </article>
         ))}
+        </div>
       </main>
     </>
   );
