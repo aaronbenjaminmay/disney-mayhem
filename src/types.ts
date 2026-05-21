@@ -43,6 +43,8 @@ export type ScheduledItem = {
   endTime?: string;
   title: string;
   location: string;
+  area?: string;
+  activities?: Activity[];
   category: ScheduledCategory;
   notes?: string;
   needsAttention?: boolean;

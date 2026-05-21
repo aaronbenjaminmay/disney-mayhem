@@ -1,6 +1,20 @@
-import type { Activity, EditableActivityFields, EditableItemFields, FlexibleBlock, ReservationItem, ScheduledItem, TripDay, TripItem } from '../types';
+import type { Activity, EditableActivityFields, EditableItemFields, ReservationItem, ScheduledItem, TripDay, TripItem } from '../types';
 import { withTripDayGroups } from './landBlocks';
 import { getItemStart } from './time';
+
+const warnedPersistenceIds = new Set<string>();
+
+function warnUnknownPersistenceReference(kind: string, id: string, detail?: Record<string, unknown>) {
+  const warningKey = `${kind}:${id}`;
+  if (warnedPersistenceIds.has(warningKey)) return;
+
+  warnedPersistenceIds.add(warningKey);
+  console.warn('Disney Mayhem persistence warning: saved edit references an unknown itinerary ID', {
+    kind,
+    id,
+    ...detail,
+  });
+}
 
 export function isReservationItem(item: TripItem): item is ReservationItem | ScheduledItem {
   return item.type === 'reservation' || (item.type === 'scheduled' && item.category === 'reservation');
@@ -65,13 +79,24 @@ function applyEdit(item: TripItem, fields?: EditableItemFields): TripItem {
   if (!fields) return item;
 
   const updated = createItemFromFields(item.id, fields);
+  const existingActivities = 'activities' in item && Array.isArray(item.activities) ? item.activities : undefined;
 
-  if (updated.type === 'flexible' && item.type === 'flexible') {
+  if (updated.type === 'flexible' && existingActivities) {
     return {
       ...item,
       ...updated,
-      area: fields.location.trim() || item.area,
-      activities: item.activities,
+      area: fields.location.trim() || ('area' in item ? item.area : undefined) || item.location || 'Flexible block',
+      activities: existingActivities,
+    };
+  }
+
+  if (updated.type === 'scheduled' && existingActivities) {
+    return {
+      ...item,
+      ...updated,
+      area: 'area' in item ? item.area : undefined,
+      activities: existingActivities,
+      category: updated.category,
     };
   }
 
@@ -98,10 +123,6 @@ function getItemTargetDayId(item: TripItem, sourceDayId: string, fields?: Editab
   if (fields?.date) return fields.date;
   if (item.type === 'reservation' && item.date) return item.date;
   return sourceDayId;
-}
-
-function sortItemsByTime(items: TripItem[]): TripItem[] {
-  return [...items].sort((left, right) => getItemStart(left) - getItemStart(right));
 }
 
 export function toEditableActivityFields(activity: Activity): EditableActivityFields {
@@ -143,7 +164,7 @@ function applyActivityEdits(
   addedActivities: Record<string, Activity[]>,
   deletedActivityIds: Set<string>,
 ): TripItem {
-  if (item.type !== 'flexible') return item;
+  if (!('activities' in item) || !Array.isArray(item.activities)) return item;
 
   const activities = [
     ...item.activities.filter((activity) => !deletedActivityIds.has(activity.id)),
@@ -170,7 +191,7 @@ function applyActivityEdits(
   return {
     ...item,
     activities,
-  } satisfies FlexibleBlock;
+  } as TripItem;
 }
 
 export function mergeTripEdits(
@@ -185,8 +206,64 @@ export function mergeTripEdits(
   const deleted = new Set(deletedItemIds);
   const deletedActivities = new Set(deletedActivityIds);
   const itemsByDay = new Map<string, TripItem[]>();
+  const knownDayIds = new Set(baseDays.map((day) => day.id));
+  const knownItemIds = new Set<string>();
+  const knownActivityIds = new Set<string>();
 
-  baseDays.forEach((day) => itemsByDay.set(day.id, []));
+  baseDays.forEach((day) => {
+    itemsByDay.set(day.id, []);
+    day.items.forEach((item) => {
+      knownItemIds.add(item.id);
+      if ('activities' in item && Array.isArray(item.activities)) {
+        item.activities.forEach((activity) => knownActivityIds.add(activity.id));
+      }
+    });
+  });
+
+  Object.entries(addedItems).forEach(([dayId, items]) => {
+    if (!knownDayIds.has(dayId)) {
+      warnUnknownPersistenceReference('added item day', dayId);
+    }
+
+    items.forEach((item) => {
+      knownItemIds.add(item.id);
+      if ('activities' in item && Array.isArray(item.activities)) {
+        item.activities.forEach((activity) => knownActivityIds.add(activity.id));
+      }
+    });
+  });
+
+  Object.entries(addedActivities).forEach(([parentItemId, activities]) => {
+    if (!knownItemIds.has(parentItemId)) {
+      warnUnknownPersistenceReference('added activity parent item', parentItemId);
+    }
+
+    activities.forEach((activity) => knownActivityIds.add(activity.id));
+  });
+
+  Object.keys(itemEdits).forEach((itemId) => {
+    if (!knownItemIds.has(itemId)) {
+      warnUnknownPersistenceReference('item edit', itemId);
+    }
+  });
+
+  deletedItemIds.forEach((itemId) => {
+    if (!knownItemIds.has(itemId)) {
+      warnUnknownPersistenceReference('deleted item', itemId);
+    }
+  });
+
+  Object.keys(activityEdits).forEach((activityId) => {
+    if (!knownActivityIds.has(activityId)) {
+      warnUnknownPersistenceReference('activity edit', activityId);
+    }
+  });
+
+  deletedActivityIds.forEach((activityId) => {
+    if (!knownActivityIds.has(activityId)) {
+      warnUnknownPersistenceReference('deleted activity', activityId);
+    }
+  });
 
   baseDays.forEach((day) => {
     day.items
@@ -211,7 +288,7 @@ export function mergeTripEdits(
   });
 
   return baseDays.map((day) => {
-    const items = sortItemsByTime(itemsByDay.get(day.id) ?? []).map((item) => applyActivityEdits(item, activityEdits, addedActivities, deletedActivities));
+    const items = (itemsByDay.get(day.id) ?? []).map((item) => applyActivityEdits(item, activityEdits, addedActivities, deletedActivities));
 
     return withTripDayGroups({
       ...day,

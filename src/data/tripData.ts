@@ -223,14 +223,14 @@ export const tripDays: TripDay[] = [
       },
       {
         id: 'may-30-tron',
-        type: 'scheduled',
+        type: 'flexible',
         time: '19:00',
         endTime: '20:30',
-        title: 'Tron (48") @ Night ?',
+        title: 'TRON Lightcycle / Run (48") @ Night ?',
+        area: 'Tomorrowland',
         location: 'Magic Kingdom',
-        category: 'park',
         needsAttention: true,
-        notes: 'Rory might not be tall enough.',
+        activities: [{ id: 'may-30-tron-lightcycle', title: 'TRON Lightcycle / Run (48") @ Night ?', location: 'Tomorrowland', notes: 'Rory might not be tall enough.' }],
       },
       {
         id: 'may-30-light-parade',

@@ -77,7 +77,7 @@ export function getActivityStatusKey(block: TripItem, activity: Activity): strin
 }
 
 export function findNextActivity(block: TripItem, statuses: Record<string, ItemStatus>): Activity | undefined {
-  if (block.type !== 'flexible') return undefined;
+  if (!('activities' in block) || !Array.isArray(block.activities)) return undefined;
   return block.activities.find((activity) => statuses[getActivityStatusKey(block, activity)] !== 'done');
 }
 

@@ -1,10 +1,15 @@
-import type { Activity, FlexibleBlock, LandBlock, LandBlockActivity, ParkName, ScheduledItem, TripDay, TripItem } from '../types';
+import type { Activity, LandBlock, LandBlockActivity, ParkName, ScheduledItem, TripDay, TripItem } from '../types';
+
+type ActivityBlock = TripItem & {
+  activities: Activity[];
+  area?: string;
+};
 
 function includesAny(text: string, values: string[]) {
   return values.some((value) => text.includes(value));
 }
 
-export function getActivityLand(park: ParkName, block: FlexibleBlock, activity: Activity): string {
+export function getActivityLand(park: ParkName, block: ActivityBlock, activity: Activity): string {
   const text = `${activity.title} ${activity.location} ${activity.notes ?? ''}`.toLowerCase();
   const fallbackText = `${block.area} ${block.location}`.toLowerCase();
 
@@ -73,7 +78,7 @@ export function getActivityLand(park: ParkName, block: FlexibleBlock, activity: 
   return activity.location || block.area || block.location;
 }
 
-function makeLandActivity(block: FlexibleBlock, activity: Activity): LandBlockActivity {
+function makeLandActivity(block: ActivityBlock, activity: Activity): LandBlockActivity {
   return {
     ...activity,
     sourceItemId: block.id,
@@ -85,11 +90,15 @@ function makeLandActivity(block: FlexibleBlock, activity: Activity): LandBlockAc
   };
 }
 
+function hasActivityBlock(item: TripItem): item is ActivityBlock {
+  return 'activities' in item && Array.isArray(item.activities);
+}
+
 export function buildLandBlocks(day: TripDay, items: TripItem[] = day.items): LandBlock[] {
   const blocks = new Map<string, LandBlock>();
 
   items
-    .filter((item): item is FlexibleBlock => item.type === 'flexible')
+    .filter(hasActivityBlock)
     .forEach((block) => {
       if (block.activities.length === 0) {
         const land = block.area || block.location;

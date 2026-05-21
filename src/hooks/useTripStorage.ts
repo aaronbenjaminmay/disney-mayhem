@@ -70,7 +70,20 @@ export function useTripStorage() {
     let isMounted = true;
     let isPolling = false;
 
-    function applySupabaseEdits(edits: SupabaseStatusEdits, replaceStatuses: boolean) {
+    function mergeAddedItems(current: Record<string, TripItem[]>, incoming: Record<string, TripItem[]>) {
+      const merged = { ...current };
+
+      Object.entries(incoming).forEach(([dayId, items]) => {
+        const existing = merged[dayId] ?? [];
+        const byId = new Map(existing.map((item) => [item.id, item]));
+        items.forEach((item) => byId.set(item.id, item));
+        merged[dayId] = [...byId.values()];
+      });
+
+      return merged;
+    }
+
+    function applySupabaseEdits(edits: SupabaseStatusEdits, preferSupabaseSnapshot: boolean) {
       if (edits.latestUpdatedAt) {
         lastSupabaseUpdatedAtRef.current = edits.latestUpdatedAt;
       }
@@ -78,19 +91,13 @@ export function useTripStorage() {
       if (edits.count === 0) return;
 
       setState((current) => {
-        const nextStatuses = replaceStatuses ? edits.statuses : { ...current.statuses, ...edits.statuses };
-        const nextActivityEdits = { ...current.activityEdits, ...edits.activityEdits };
-        const nextAddedActivities = mergeAddedActivities(current.addedActivities, edits.addedActivities);
-        const nextDeletedActivityIds = [...new Set([...current.deletedActivityIds, ...edits.deletedActivityIds])];
-        const nextItemEdits = { ...current.itemEdits, ...edits.itemEdits };
-        const nextAddedItems = { ...current.addedItems };
-        Object.entries(edits.addedItems).forEach(([dayId, items]) => {
-          const existing = nextAddedItems[dayId] ?? [];
-          const byId = new Map(existing.map((item) => [item.id, item]));
-          items.forEach((item) => byId.set(item.id, item));
-          nextAddedItems[dayId] = [...byId.values()];
-        });
-        const nextDeletedItemIds = [...new Set([...current.deletedItemIds, ...edits.deletedItemIds])];
+        const nextStatuses = preferSupabaseSnapshot ? edits.statuses : { ...current.statuses, ...edits.statuses };
+        const nextActivityEdits = preferSupabaseSnapshot ? edits.activityEdits : { ...current.activityEdits, ...edits.activityEdits };
+        const nextAddedActivities = preferSupabaseSnapshot ? edits.addedActivities : mergeAddedActivities(current.addedActivities, edits.addedActivities);
+        const nextDeletedActivityIds = preferSupabaseSnapshot ? edits.deletedActivityIds : [...new Set([...current.deletedActivityIds, ...edits.deletedActivityIds])];
+        const nextItemEdits = preferSupabaseSnapshot ? edits.itemEdits : { ...current.itemEdits, ...edits.itemEdits };
+        const nextAddedItems = preferSupabaseSnapshot ? edits.addedItems : mergeAddedItems(current.addedItems, edits.addedItems);
+        const nextDeletedItemIds = preferSupabaseSnapshot ? edits.deletedItemIds : [...new Set([...current.deletedItemIds, ...edits.deletedItemIds])];
         if (
           statusesAreEqual(current.statuses, nextStatuses) &&
           JSON.stringify(current.itemEdits) === JSON.stringify(nextItemEdits) &&
@@ -125,7 +132,7 @@ export function useTripStorage() {
         if (!isMounted || !edits) return;
 
         if (initial) {
-          applySupabaseEdits(edits, Object.keys(edits.statuses).length > 0);
+          applySupabaseEdits(edits, edits.count > 0);
           return;
         }
 

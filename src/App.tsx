@@ -6,7 +6,7 @@ import { StatusButton } from './components/StatusButton';
 import { AppTab, Tabs } from './components/Tabs';
 import { tripDays as baseTripDays, tripEndDate, tripStartDate } from './data/tripData';
 import { useTripStorage } from './hooks/useTripStorage';
-import type { Activity, EditableActivityFields, EditableItemFields, FlexibleBlock, ItemStatus, LandBlock, ParkName, TripDay, TripItem } from './types';
+import type { Activity, EditableActivityFields, EditableItemFields, ItemStatus, LandBlock, ParkName, TripDay, TripItem } from './types';
 import {
   createActivityFromFields,
   createItemFromFields,
@@ -31,13 +31,58 @@ import {
   getTripPhase,
 } from './utils/time';
 
+type TimelineActivityBlock = TripItem & {
+  activities: Activity[];
+  area?: string;
+};
+
+const warnedUnknownStatusIds = new Set<string>();
+
+function hasTimelineActivityBlock(item: TripItem): item is TimelineActivityBlock {
+  return 'activities' in item && Array.isArray(item.activities);
+}
+
+function getKnownStatusIds(days: TripDay[]): Set<string> {
+  const ids = new Set<string>();
+
+  days.forEach((day) => {
+    day.items.forEach((item) => {
+      ids.add(getItemStatusKey(item));
+      if (hasTimelineActivityBlock(item)) {
+        item.activities.forEach((activity) => ids.add(getActivityStatusKey(item, activity)));
+      }
+    });
+  });
+
+  return ids;
+}
+
+function warnUnknownStatusReferences(days: TripDay[], statuses: Record<string, ItemStatus>) {
+  const knownStatusIds = getKnownStatusIds(days);
+
+  Object.keys(statuses).forEach((statusId) => {
+    if (knownStatusIds.has(statusId) || warnedUnknownStatusIds.has(statusId)) return;
+
+    warnedUnknownStatusIds.add(statusId);
+    console.warn('Disney Mayhem persistence warning: saved status references an unknown itinerary ID', {
+      kind: 'status',
+      id: statusId,
+    });
+  });
+}
+
+function getItemDisplayLocation(item: TripItem): string {
+  if (hasTimelineActivityBlock(item)) return item.area || item.location;
+  return item.location;
+}
+
 function itemNeedsAttention(item: TripItem) {
   const text = `${item.title} ${item.location} ${item.notes ?? ''}`.toLowerCase();
   return Boolean(item.needsAttention) || text.includes('need reservation') || text.includes('insert multi-pass') || text.includes('add queue link');
 }
 
 function getActiveLandBlock(day: TripDay, activeItem: TripItem | undefined, statuses: Record<string, ItemStatus>): LandBlock | undefined {
-  if (activeItem?.type !== 'flexible') return undefined;
+  if (!activeItem || !hasTimelineActivityBlock(activeItem)) return undefined;
 
   const activity = findNextActivity(activeItem, statuses) ?? activeItem.activities[0];
   if (!activity) return day.landBlocks?.find((block) => block.sourceItemIds.includes(activeItem.id));
@@ -116,8 +161,8 @@ function addMinutesToTime(time: string, minutesToAdd: number): string {
 
 const lightningLaneDurationOptions = [30, 60, 90, 120];
 
-function groupActivitiesByLand(day: TripDay, item: FlexibleBlock) {
-  const groups: { land: string; activities: FlexibleBlock['activities'] }[] = [];
+function groupActivitiesByLand(day: TripDay, item: TimelineActivityBlock) {
+  const groups: { land: string; activities: Activity[] }[] = [];
 
   item.activities.forEach((activity) => {
     const land = getActivityLand(day.park, item, activity);
@@ -252,7 +297,7 @@ function hasStormCode(code: unknown): boolean {
   return typeof code === 'number' && code >= 95 && code <= 99;
 }
 
-function isMeaningfulRideActivity(item: FlexibleBlock, activity: Activity): boolean {
+function isMeaningfulRideActivity(item: TimelineActivityBlock, activity: Activity): boolean {
   const title = activity.title.trim();
   if (!title) return false;
 
@@ -472,13 +517,13 @@ function useWeatherIntel(date: string): WeatherIntel {
 
 function getDayIntel(day: TripDay, statuses: Record<string, ItemStatus>) {
   const reservationCount = day.items.filter(isReservationItem).length;
-  const flexibleItemsById = new Map(day.items.filter((item): item is FlexibleBlock => item.type === 'flexible').map((item) => [item.id, item]));
+  const activityItemsById = new Map(day.items.filter(hasTimelineActivityBlock).map((item) => [item.id, item]));
   const rideCandidates = (day.landBlocks ?? []).flatMap((landBlock) =>
     landBlock.activities.map((activity) => ({
       land: landBlock.land,
       sourceItemId: activity.sourceItemId,
       activity,
-      parentItem: flexibleItemsById.get(activity.sourceItemId),
+      parentItem: activityItemsById.get(activity.sourceItemId),
     })),
   );
   const validRideCandidates = shouldShowRideIntelForDay(day)
@@ -766,9 +811,7 @@ function TodayScreen({
             {activeLand && nowItem
               ? `Current land · ${formatTimeRange(nowItem)}`
               : nowItem
-                ? nowItem.type === 'flexible'
-                  ? `${nowItem.area} · ${formatTimeRange(nowItem)}`
-                  : `${nowItem.location} · ${formatTimeRange(nowItem)}`
+                ? `${getItemDisplayLocation(nowItem)} · ${formatTimeRange(nowItem)}`
               : 'No fixed item is active. Breathe, hydrate, and use Next when ready.'}
           </p>
           {(activeLand?.notes ?? nowItem?.notes) ? <p className="mx-auto mt-4 max-w-xl text-[15px] leading-6 text-[#A1A1A6]">{activeLand?.notes ?? nowItem?.notes}</p> : null}
@@ -817,7 +860,7 @@ function TodayScreen({
               <div>
                 <p className="text-[13px] font-black uppercase tracking-[0.16em] text-[#0A84FF]">{formatTimeRange(nextItem)}</p>
                 <h3 className="mt-2 text-[22px] font-black leading-tight text-white">{nextItem.title}</h3>
-                <p className="mt-2 text-[15px] font-semibold text-[#A1A1A6]">{nextItem.type === 'flexible' ? nextItem.area : nextItem.location}</p>
+                <p className="mt-2 text-[15px] font-semibold text-[#A1A1A6]">{getItemDisplayLocation(nextItem)}</p>
               </div>
               <button
                 type="button"
@@ -855,7 +898,7 @@ function TodayScreen({
               <div>
                 <p className="text-[12px] font-black uppercase tracking-[0.16em] text-[#A1A1A6]">{formatTimeRange(item)}</p>
                 <h3 className="mt-1 text-[18px] font-black leading-tight text-white">{item.title}</h3>
-                <p className="mt-1 text-[14px] text-[#A1A1A6]">{item.type === 'flexible' ? item.area : item.location}</p>
+                <p className="mt-1 text-[14px] text-[#A1A1A6]">{getItemDisplayLocation(item)}</p>
               </div>
               <button
                 type="button"
@@ -899,7 +942,7 @@ function CompactItem({
   const nextActivity = findNextActivity(item, statuses);
 
   return (
-    <article className={`py-4 ${item.type === 'flexible' ? 'glass-surface rounded-[1.5rem] p-4' : ''}`}>
+    <article className={`py-4 ${hasTimelineActivityBlock(item) ? 'glass-surface rounded-[1.5rem] p-4' : ''}`}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-[12px] font-black uppercase tracking-[0.16em] text-[#A1A1A6]">{eyebrow ?? formatTimeRange(item)}</p>
@@ -917,7 +960,7 @@ function CompactItem({
           </button>
         ) : null}
       </div>
-      <p className="mt-2 text-[15px] text-[#A1A1A6]">{item.type === 'flexible' ? item.area : item.location}</p>
+      <p className="mt-2 text-[15px] text-[#A1A1A6]">{getItemDisplayLocation(item)}</p>
       {nextActivity ? <p className="mt-3 text-[14px] font-bold text-[#BF5AF2]">Next: {nextActivity.title}</p> : null}
     </article>
   );
@@ -940,7 +983,7 @@ function AttentionScreen({
       <main className="screen-fade px-4 pb-6">
         <div className="divide-y divide-[#2C2C2E]/70">
         {attentionItems.map(({ day, item }) => (
-          <article key={item.id} className={`py-4 ${item.type === 'flexible' ? 'glass-surface rounded-[1.6rem] p-4' : ''}`}>
+          <article key={item.id} className={`py-4 ${hasTimelineActivityBlock(item) ? 'glass-surface rounded-[1.6rem] p-4' : ''}`}>
             <p className="text-sm font-black uppercase tracking-wide text-[#FF9F0A]">{formatDateLabel(day.date)}</p>
             <div className="mt-1 flex items-start justify-between gap-3">
               <h2 className="text-xl font-black text-white">{item.title}</h2>
@@ -955,7 +998,7 @@ function AttentionScreen({
               </button>
             </div>
             <p className="mt-1 font-semibold text-[#A1A1A6]">{formatTimeRange(item)}</p>
-            <p className="mt-1 text-sm text-[#A1A1A6]">{item.type === 'flexible' ? item.area : item.location}</p>
+            <p className="mt-1 text-sm text-[#A1A1A6]">{getItemDisplayLocation(item)}</p>
             {item.notes ? <p className="mt-3 text-sm font-bold text-[#FF9F0A]">{item.notes}</p> : null}
           </article>
         ))}
@@ -987,7 +1030,7 @@ type LandEditorActivity = {
 
 type LandEditorState = {
   dayId: string;
-  parentItem: FlexibleBlock;
+  parentItem: TimelineActivityBlock;
   land: string;
   activities: LandEditorActivity[];
 };
@@ -1517,11 +1560,11 @@ function FlexibleTimelineItem({
   onEditLand,
 }: {
   day: TripDay;
-  item: FlexibleBlock;
+  item: TimelineActivityBlock;
   statuses: Record<string, ItemStatus>;
   onCycleStatus: (id: string) => void;
   onEditItem: (dayId: string, item: TripItem) => void;
-  onEditLand: (day: TripDay, item: FlexibleBlock, land: string, activities: Activity[]) => void;
+  onEditLand: (day: TripDay, item: TimelineActivityBlock, land: string, activities: Activity[]) => void;
 }) {
   const itemStatus = statuses[getItemStatusKey(item)];
   const groups = groupActivitiesByLand(day, item);
@@ -1531,7 +1574,7 @@ function FlexibleTimelineItem({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-[12px] font-black uppercase tracking-[0.16em] text-[#0A84FF]">{formatTimeRange(item)}</p>
-          <p className="mt-2 text-[15px] font-semibold text-[#A1A1A6]">{item.location}</p>
+          <p className="mt-2 text-[15px] font-semibold text-[#A1A1A6]">{getItemDisplayLocation(item)}</p>
         </div>
         <div className="flex gap-2">
           <button
@@ -1609,7 +1652,7 @@ function DayTimeline({
   onCycleStatus: (id: string) => void;
   onEditItem: (dayId: string, item: TripItem) => void;
   onAddItem: (dayId: string) => void;
-  onEditLand: (day: TripDay, item: FlexibleBlock, land: string, activities: Activity[]) => void;
+  onEditLand: (day: TripDay, item: TimelineActivityBlock, land: string, activities: Activity[]) => void;
 }) {
   return (
     <section aria-labelledby={`${day.id}-heading`} className="section-rise px-4 py-8">
@@ -1635,7 +1678,7 @@ function DayTimeline({
       </div>
       <div className="divide-y divide-[#2C2C2E]/70">
         {day.items.map((item) =>
-          item.type === 'flexible' ? (
+          hasTimelineActivityBlock(item) ? (
             <FlexibleTimelineItem
               key={item.id}
               day={day}
@@ -1673,7 +1716,7 @@ function AllDaysScreen({
   days: TripDay[];
   onEditItem: (dayId: string, item: TripItem) => void;
   onAddItem: (dayId: string) => void;
-  onEditLand: (day: TripDay, item: FlexibleBlock, land: string, activities: Activity[]) => void;
+  onEditLand: (day: TripDay, item: TimelineActivityBlock, land: string, activities: Activity[]) => void;
 }) {
   return (
     <main className="screen-fade pt-2">
@@ -1824,6 +1867,10 @@ export default function App() {
   const selectedTimelineDay = selectedDayId ? tripDays.find((tripDay) => tripDay.id === selectedDayId) : undefined;
   const timelineDays = selectedTimelineDay ? [selectedTimelineDay] : tripDays;
 
+  useEffect(() => {
+    warnUnknownStatusReferences(tripDays, tripStorage.statuses);
+  }, [tripDays, tripStorage.statuses]);
+
   function openTab(tab: AppTab) {
     setSelectedDayId(null);
     setActiveTab(tab);
@@ -1893,7 +1940,7 @@ export default function App() {
     });
   }
 
-  function openLandEditor(day: TripDay, item: FlexibleBlock, land: string, activities: Activity[]) {
+  function openLandEditor(day: TripDay, item: TimelineActivityBlock, land: string, activities: Activity[]) {
     setLandEditor({
       dayId: day.id,
       parentItem: item,
