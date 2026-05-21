@@ -451,7 +451,7 @@ function TodayScreen({
         <section aria-labelledby="countdown-heading" className="section-rise text-center">
           <h1 id="countdown-heading" className="sr-only">Disney Mayhem</h1>
           <img
-            src="/DisneyMayhem-WM.svg"
+            src={`${import.meta.env.BASE_URL}DisneyMayhem-WM.svg`}
             alt="Disney Mayhem"
             className="mx-auto h-auto w-[min(78vw,280px)] sm:w-[320px]"
           />
