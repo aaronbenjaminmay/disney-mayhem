@@ -25,6 +25,14 @@ export type Activity = {
   title: string;
   location: string;
   notes?: string;
+  time?: string;
+  endTime?: string;
+  lightningLaneTime?: string;
+  lightningLaneEndTime?: string;
+  lightningLaneStart?: string;
+  lightningLaneEnd?: string;
+  lightningLaneLabel?: string;
+  displayOrder?: number;
   needsAttention?: boolean;
 };
 
@@ -55,6 +63,26 @@ export type FlexibleBlock = {
 
 export type TripItem = ScheduledItem | FlexibleBlock;
 
+export type LandBlockActivity = Activity & {
+  sourceItemId: string;
+  sourceItemTitle: string;
+  sourceItemTime?: string;
+  sourceItemEndTime?: string;
+  sourceItemNotes?: string;
+  sourceItemNeedsAttention?: boolean;
+};
+
+export type LandBlock = {
+  id: string;
+  land: string;
+  activities: LandBlockActivity[];
+  sourceItemIds: string[];
+  time?: string;
+  endTime?: string;
+  notes?: string;
+  needsAttention?: boolean;
+};
+
 export type TripDay = {
   id: string;
   date: string;
@@ -63,6 +91,8 @@ export type TripDay = {
   location: string;
   notes?: string;
   items: TripItem[];
+  scheduledItems?: ScheduledItem[];
+  landBlocks?: LandBlock[];
 };
 
 export type PersistedState = {
@@ -71,6 +101,9 @@ export type PersistedState = {
   itemEdits: Record<string, EditableItemFields>;
   addedItems: Record<string, TripItem[]>;
   deletedItemIds: string[];
+  activityEdits: Record<string, EditableActivityFields>;
+  addedActivities: Record<string, Activity[]>;
+  deletedActivityIds: string[];
 };
 
 export type EditableItemFields = {
@@ -79,6 +112,20 @@ export type EditableItemFields = {
   location: string;
   notes?: string;
   type: TripItem['type'];
+};
+
+export type EditableActivityFields = {
+  title: string;
+  location: string;
+  notes?: string;
+  time?: string;
+  endTime?: string;
+  lightningLaneTime?: string;
+  lightningLaneEndTime?: string;
+  lightningLaneStart?: string;
+  lightningLaneEnd?: string;
+  lightningLaneLabel?: string;
+  displayOrder?: number;
 };
 
 export type ActiveScheduleState = {

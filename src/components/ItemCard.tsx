@@ -17,11 +17,11 @@ function EditButton({ item, onEdit }: { item: TripItem; onEdit?: (item: TripItem
     <button
       type="button"
       onClick={() => onEdit(item)}
-      className="ios-icon-button"
+      className="ios-quiet-button"
       aria-label={`Edit ${item.title}`}
       title="Edit"
     >
-      ✎
+      Edit
     </button>
   );
 }
@@ -32,7 +32,7 @@ export function ItemCard({ item, statuses, onCycleStatus, onEdit, compact = fals
 
   if (item.type === 'flexible') {
     return (
-      <article className="rounded-[1.7rem] bg-[#1C1C1E] p-5 shadow-xl shadow-black/30">
+      <article className="glass-surface rounded-[1.7rem] p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="text-[12px] font-black uppercase tracking-[0.16em] text-[#0A84FF]">{formatTimeRange(item)}</p>
@@ -46,9 +46,6 @@ export function ItemCard({ item, statuses, onCycleStatus, onEdit, compact = fals
         </div>
 
         {item.notes ? <p className="mt-4 text-[15px] leading-6 text-[#A1A1A6]">{item.notes}</p> : null}
-        {item.needsAttention ? (
-          <p className="mt-4 inline-flex rounded-full bg-[#FF9F0A] px-4 py-2 text-[14px] font-black text-black">Attention needed</p>
-        ) : null}
         {nextActivity ? (
           <p className="mt-4 rounded-full bg-[#0A84FF] px-4 py-2 text-[14px] font-black text-black">
             Next recommended: {nextActivity.title}
@@ -91,9 +88,6 @@ export function ItemCard({ item, statuses, onCycleStatus, onEdit, compact = fals
         </div>
       </div>
       {item.notes ? <p className="mt-3 text-[15px] leading-6 text-[#A1A1A6]">{item.notes}</p> : null}
-      {item.needsAttention ? (
-        <p className="mt-4 inline-flex rounded-full bg-[#FF9F0A] px-4 py-2 text-[14px] font-black text-black">Attention needed</p>
-      ) : null}
     </article>
   );
 }

@@ -1,51 +1,126 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ItemCard } from './components/ItemCard';
+import { LucideIcon, type LucideIconName } from './components/LucideIcon';
 import { ScreenHeader } from './components/ScreenHeader';
+import { StatusButton } from './components/StatusButton';
 import { AppTab, Tabs } from './components/Tabs';
 import { tripDays as baseTripDays, tripEndDate, tripStartDate } from './data/tripData';
 import { useTripStorage } from './hooks/useTripStorage';
-import type { EditableItemFields, ItemStatus, TripDay, TripItem } from './types';
-import { createItemFromFields, getAttentionItems, getReservations, mergeTripEdits, toEditableFields } from './utils/itineraryEdits';
+import type { Activity, EditableActivityFields, EditableItemFields, FlexibleBlock, ItemStatus, LandBlock, TripDay, TripItem } from './types';
+import {
+  createActivityFromFields,
+  createItemFromFields,
+  getAttentionItems,
+  getReservations,
+  mergeTripEdits,
+  toEditableActivityFields,
+  toEditableFields,
+} from './utils/itineraryEdits';
+import { getActivityLand } from './utils/landBlocks';
 import {
   findNextActivity,
   formatDateLabel,
+  formatTime,
   formatTimeRange,
   getActiveScheduleState,
+  getActivityStatusKey,
   getDepartureCountdown,
-  getItemStart,
   getItemStatusKey,
   getTripPhase,
 } from './utils/time';
-
-function statusClass(status?: ItemStatus) {
-  if (status === 'done') return 'bg-[#30D158]/12';
-  if (status === 'skipped') return 'bg-[#1C1C1E]';
-  return 'bg-[#111111]';
-}
 
 function itemNeedsAttention(item: TripItem) {
   const text = `${item.title} ${item.location} ${item.notes ?? ''}`.toLowerCase();
   return Boolean(item.needsAttention) || text.includes('need reservation') || text.includes('insert multi-pass') || text.includes('add queue link');
 }
 
-function getTimeOfDay(item: TripItem) {
-  if (!item.time) return 'Flexible';
-  const minutes = getItemStart(item);
-  if (minutes < 12 * 60) return 'Morning';
-  if (minutes < 17 * 60) return 'Afternoon';
-  return 'Evening';
+function getActiveLandBlock(day: TripDay, activeItem: TripItem | undefined, statuses: Record<string, ItemStatus>): LandBlock | undefined {
+  if (activeItem?.type !== 'flexible') return undefined;
+
+  const activity = findNextActivity(activeItem, statuses) ?? activeItem.activities[0];
+  if (!activity) return day.landBlocks?.find((block) => block.sourceItemIds.includes(activeItem.id));
+
+  const land = getActivityLand(day.park, activeItem, activity);
+  return day.landBlocks?.find((block) => block.land === land);
+}
+
+function getUpcomingLandBlocks(day: TripDay, activeLand?: LandBlock): LandBlock[] {
+  const landBlocks = day.landBlocks ?? [];
+  if (!activeLand) return landBlocks;
+
+  const activeIndex = landBlocks.findIndex((block) => block.id === activeLand.id);
+  return activeIndex === -1 ? landBlocks.filter((block) => block.id !== activeLand.id) : landBlocks.slice(activeIndex + 1);
+}
+
+function formatLandTime(block: LandBlock): string {
+  if (block.time && block.endTime) return `${formatTime(block.time)}-${formatTime(block.endTime)}`;
+  return block.time ? formatTime(block.time) : 'Flexible';
+}
+
+function formatOptionalTimeRange(time?: string, endTime?: string): string | undefined {
+  if (time && endTime) return `${formatTime(time)}-${formatTime(endTime)}`;
+  if (time) return formatTime(time);
+  return undefined;
+}
+
+function formatShortTime(time?: string): string | undefined {
+  if (!time) return undefined;
+  return formatTime(time).replace(':00', '').replace(/\s/g, '');
+}
+
+function formatShortTimeRange(time?: string, endTime?: string): string | undefined {
+  const start = formatShortTime(time);
+  const end = formatShortTime(endTime);
+  if (start && end) return `${start}-${end}`;
+  return start;
+}
+
+function formatLightningLane(activity: Activity): string | undefined {
+  return formatShortTimeRange(activity.lightningLaneTime ?? activity.lightningLaneStart, activity.lightningLaneEndTime ?? activity.lightningLaneEnd);
+}
+
+function addMinutesToTime(time: string, minutesToAdd: number): string {
+  const [hours, minutes] = time.split(':').map(Number);
+  const totalMinutes = hours * 60 + minutes + minutesToAdd;
+  const nextHours = Math.floor(totalMinutes / 60) % 24;
+  const nextMinutes = totalMinutes % 60;
+  return `${String(nextHours).padStart(2, '0')}:${String(nextMinutes).padStart(2, '0')}`;
+}
+
+const lightningLaneDurationOptions = [30, 60, 90, 120];
+
+function groupActivitiesByLand(day: TripDay, item: FlexibleBlock) {
+  const groups: { land: string; activities: FlexibleBlock['activities'] }[] = [];
+
+  item.activities.forEach((activity) => {
+    const land = getActivityLand(day.park, item, activity);
+    const existing = groups.find((group) => group.land === land);
+
+    if (existing) {
+      existing.activities.push(activity);
+      return;
+    }
+
+    groups.push({ land, activities: [activity] });
+  });
+
+  if (groups.length === 0) {
+    groups.push({ land: item.area || item.location, activities: [] });
+  }
+
+  return groups;
 }
 
 function getDayPresentation(day: TripDay) {
   if (day.label.toLowerCase().includes('departure') || day.label.toLowerCase().includes('travel')) {
-    return { title: 'Travel Day ✈️', symbol: '✈️' };
+    return { title: 'Travel Day', icon: 'plane' as const };
   }
 
-  if (day.park === 'Magic Kingdom') return { title: 'Magic Kingdom Day 🏰', symbol: '🏰' };
-  if (day.park === 'EPCOT') return { title: 'EPCOT Day 🌐', symbol: '🌐' };
-  if (day.park === 'Hollywood Studios') return { title: 'Hollywood Studios Day 🎬', symbol: '🎬' };
-  if (day.park === 'Animal Kingdom') return { title: 'Animal Kingdom Day 🌿', symbol: '🌿' };
-  return { title: `${day.label} ✨`, symbol: '✨' };
+  if (day.park === 'Magic Kingdom') return { title: 'Magic Kingdom Day', icon: 'castle' as const };
+  if (day.park === 'EPCOT') return { title: 'EPCOT Day', icon: 'globe' as const };
+  if (day.park === 'Hollywood Studios') return { title: 'Hollywood Studios Day', icon: 'clapperboard' as const };
+  if (day.park === 'Animal Kingdom') return { title: 'Animal Kingdom Day', icon: 'leaf' as const };
+  return { title: day.label, icon: 'calendar' as const };
 }
 
 function DashboardTile({
@@ -56,21 +131,23 @@ function DashboardTile({
 }: {
   title: string;
   subtitle: string;
-  icon: string;
+  icon: LucideIconName;
   onClick: () => void;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="min-h-28 rounded-[1.35rem] bg-[#1C1C1E] px-4 py-4 text-left transition hover:bg-[#2C2C2E] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]"
+      className="glass-surface min-h-28 rounded-[1.35rem] px-4 py-4 text-left transition hover:border-white/15 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]"
       aria-label={`${title}. ${subtitle}`}
     >
-      <span className="block text-2xl" aria-hidden="true">
-        {icon}
+      <span className="flex items-center gap-3">
+        <LucideIcon name={icon} size={24} className="shrink-0 text-[#A1A1A6]" />
+        <span>
+          <span className="block text-[17px] font-black leading-tight text-white">{title}</span>
+          <span className="mt-1 block text-[13px] font-semibold leading-snug text-[#A1A1A6]">{subtitle}</span>
+        </span>
       </span>
-      <span className="mt-3 block text-[17px] font-black leading-tight text-white">{title}</span>
-      <span className="mt-1 block text-[13px] font-semibold leading-snug text-[#A1A1A6]">{subtitle}</span>
     </button>
   );
 }
@@ -121,7 +198,7 @@ function TodayScreen({
             DISNEY MAYHEM
           </h1>
           <p className="mt-5 text-[13px] font-black uppercase tracking-[0.18em] text-white">Disney Mayhem begins in...</p>
-          <div className="mx-auto mt-7 max-w-3xl rounded-[1.75rem] bg-[#111111] px-5 py-7 shadow-2xl shadow-black/30 sm:px-8 sm:py-9">
+          <div className="glass-surface mx-auto mt-7 max-w-3xl rounded-[1.75rem] px-5 py-7 sm:px-8 sm:py-9">
             <div className="flex flex-wrap justify-center gap-x-6 gap-y-7" aria-live="polite" aria-label="Live countdown to departure">
               {countdownUnits.map((unit) => (
                 <div key={unit.label} className="basis-[calc(50%-0.75rem)] sm:basis-auto">
@@ -152,7 +229,7 @@ function TodayScreen({
                   key={tripDay.id}
                   title={formatDateLabel(tripDay.date)}
                   subtitle={tripDay.label}
-                  icon={presentation.symbol}
+                  icon={presentation.icon}
                   onClick={() => onOpenDay(tripDay.id)}
                 />
               );
@@ -160,13 +237,13 @@ function TodayScreen({
             <DashboardTile
               title="Reservations"
               subtitle="Dining and fixed plans"
-              icon="🍽️"
+              icon="utensils"
               onClick={onOpenReservations}
             />
             <DashboardTile
               title="Notes"
               subtitle="Family reminders"
-              icon="📝"
+              icon="notebook"
               onClick={onOpenNotes}
             />
           </div>
@@ -185,7 +262,7 @@ function TodayScreen({
         </ScreenHeader>
 
         <section aria-labelledby="memory-heading" className="section-rise px-4 pb-6">
-          <div className="rounded-[2rem] border border-[#BF5AF2]/45 bg-[#1C1C1E] p-5">
+          <div className="glass-surface rounded-[2rem] p-5">
             <p className="text-sm font-black uppercase tracking-wide text-[#BF5AF2]">Memory view</p>
             <h2 id="memory-heading" className="mt-3 text-2xl font-black text-white">
               {formatDateLabel(tripStartDate)} through {formatDateLabel(tripEndDate)}
@@ -200,16 +277,17 @@ function TodayScreen({
   }
 
   const nowItem = activeItem;
+  const activeLand = getActiveLandBlock(day, activeItem, statuses);
+  const upcomingLands = getUpcomingLandBlocks(day, activeLand);
+  const nextLand = activeLand ? upcomingLands[0] : undefined;
+  const laterLands = activeLand ? upcomingLands.slice(1, 4) : [];
   const laterItems = upcomingItems.filter((item) => item.id !== nextItem?.id).slice(0, 3);
   const dayPresentation = getDayPresentation(day);
 
   return (
     <>
       <header className="section-rise px-4 pb-8 pt-6">
-        <div className="relative overflow-hidden rounded-[2.2rem] bg-[#111111] px-6 py-8 shadow-2xl shadow-black/40">
-          <div className="absolute -right-6 -top-8 select-none text-[8rem] opacity-25 blur-sm" aria-hidden="true">
-            {dayPresentation.symbol}
-          </div>
+        <div className="glass-surface relative overflow-hidden rounded-[2.2rem] px-6 py-8">
           <div className="absolute inset-0 bg-black/25" aria-hidden="true" />
           <div className="relative">
             <p className="text-[12px] font-black uppercase tracking-[0.18em] text-[#0A84FF]">{isToday ? 'Today' : 'Trip preview'}</p>
@@ -220,19 +298,21 @@ function TodayScreen({
       </header>
 
       <section aria-labelledby="now-heading" className="section-rise px-4">
-        <div className="rounded-[2.4rem] bg-[#1C1C1E] px-6 py-12 text-center shadow-[0_0_60px_rgba(10,132,255,0.14)] sm:px-10 sm:py-14">
+        <div className="glass-surface rounded-[2.4rem] px-6 py-12 text-center sm:px-10 sm:py-14">
           <p className="text-[13px] font-black uppercase tracking-[0.18em] text-[#BF5AF2]">Now</p>
           <h2 id="now-heading" className="mx-auto mt-5 max-w-2xl text-[40px] font-black leading-[1.02] text-white sm:text-[48px]">
-            {nowItem ? nowItem.title : 'Open time'}
+            {activeLand ? activeLand.land : nowItem ? nowItem.title : 'Open time'}
           </h2>
           <p className="mx-auto mt-5 max-w-xl text-[16px] font-semibold leading-7 text-[#A1A1A6]">
-            {nowItem
-              ? nowItem.type === 'flexible'
-                ? `${nowItem.area} · ${formatTimeRange(nowItem)}`
-                : `${nowItem.location} · ${formatTimeRange(nowItem)}`
+            {activeLand && nowItem
+              ? `Current land · ${formatTimeRange(nowItem)}`
+              : nowItem
+                ? nowItem.type === 'flexible'
+                  ? `${nowItem.area} · ${formatTimeRange(nowItem)}`
+                  : `${nowItem.location} · ${formatTimeRange(nowItem)}`
               : 'No fixed item is active. Breathe, hydrate, and use Next when ready.'}
           </p>
-          {nowItem?.notes ? <p className="mx-auto mt-4 max-w-xl text-[15px] leading-6 text-[#A1A1A6]">{nowItem.notes}</p> : null}
+          {(activeLand?.notes ?? nowItem?.notes) ? <p className="mx-auto mt-4 max-w-xl text-[15px] leading-6 text-[#A1A1A6]">{activeLand?.notes ?? nowItem?.notes}</p> : null}
 
           {nextActivity ? (
             <div className="mx-auto mt-7 max-w-md rounded-full bg-[#0A84FF] px-5 py-3 text-[16px] font-black text-black">
@@ -256,7 +336,21 @@ function TodayScreen({
         <h2 id="next-heading" className="mb-4 text-[13px] font-black uppercase tracking-[0.18em] text-[#0A84FF]">
           Next
         </h2>
-        {nextItem && nextItem.id !== activeItem?.id ? (
+        {activeLand ? (
+          <div className="border-y border-[#2C2C2E]/70 py-5">
+            {nextLand ? (
+              <div>
+                <p className="text-[13px] font-black uppercase tracking-[0.16em] text-[#0A84FF]">{formatLandTime(nextLand)}</p>
+                <h3 className="mt-2 text-[22px] font-black leading-tight text-white">{nextLand.land}</h3>
+                <p className="mt-2 text-[15px] font-semibold text-[#A1A1A6]">
+                  {nextLand.activities.length > 0 ? `${nextLand.activities.length} activities` : 'Flexible block'}
+                </p>
+              </div>
+            ) : (
+              <div className="text-[15px] text-[#A1A1A6]">No more lands queued up.</div>
+            )}
+          </div>
+        ) : nextItem && nextItem.id !== activeItem?.id ? (
           <div className="border-y border-[#2C2C2E]/70 py-5">
             <div className="flex items-start justify-between gap-3">
               <div>
@@ -267,11 +361,11 @@ function TodayScreen({
               <button
                 type="button"
                 onClick={() => onEditItem(day.id, nextItem)}
-                className="ios-icon-button"
+                className="ios-quiet-button"
                 aria-label={`Edit ${nextItem.title}`}
                 title="Edit"
               >
-                ✎
+                Edit
               </button>
             </div>
           </div>
@@ -285,7 +379,17 @@ function TodayScreen({
           Later
         </h2>
         <ul className="divide-y divide-[#2C2C2E]/70" aria-label="Later today">
-          {laterItems.map((item) => (
+          {activeLand
+            ? laterLands.map((land) => (
+                <li key={land.id} className="min-h-16 px-1 py-3">
+                  <p className="text-[12px] font-black uppercase tracking-[0.16em] text-[#A1A1A6]">{formatLandTime(land)}</p>
+                  <h3 className="mt-1 text-[18px] font-black leading-tight text-white">{land.land}</h3>
+                  <p className="mt-1 text-[14px] text-[#A1A1A6]">
+                    {land.activities.length > 0 ? land.activities.map((activity) => activity.title).join(' · ') : 'Flexible block'}
+                  </p>
+                </li>
+              ))
+            : laterItems.map((item) => (
             <li key={item.id} className="flex min-h-16 items-center justify-between gap-4 rounded-[1.25rem] px-1 py-3">
               <div>
                 <p className="text-[12px] font-black uppercase tracking-[0.16em] text-[#A1A1A6]">{formatTimeRange(item)}</p>
@@ -295,15 +399,15 @@ function TodayScreen({
               <button
                 type="button"
                 onClick={() => onEditItem(day.id, item)}
-                className="ios-icon-button"
+                className="ios-quiet-button"
                 aria-label={`Edit ${item.title}`}
                 title="Edit"
               >
-                ✎
+                Edit
               </button>
             </li>
           ))}
-          {laterItems.length === 0 ? <li className="rounded-[1.4rem] bg-[#111111] p-4 text-[15px] text-[#A1A1A6]">No later items for this day.</li> : null}
+          {(activeLand ? laterLands.length : laterItems.length) === 0 ? <li className="glass-surface rounded-[1.4rem] p-4 text-[15px] text-[#A1A1A6]">No later items for this day.</li> : null}
         </ul>
         <div className="mt-6 border-t border-[#2C2C2E]/70 pt-6">
           <button
@@ -334,7 +438,7 @@ function CompactItem({
   const nextActivity = findNextActivity(item, statuses);
 
   return (
-    <article className={`py-4 ${item.type === 'flexible' ? 'rounded-[1.5rem] bg-[#1C1C1E] p-4' : ''}`}>
+    <article className={`py-4 ${item.type === 'flexible' ? 'glass-surface rounded-[1.5rem] p-4' : ''}`}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-[12px] font-black uppercase tracking-[0.16em] text-[#A1A1A6]">{eyebrow ?? formatTimeRange(item)}</p>
@@ -344,11 +448,11 @@ function CompactItem({
           <button
             type="button"
             onClick={onEdit}
-            className="ios-icon-button"
+            className="ios-quiet-button"
             aria-label={`Edit ${item.title}`}
             title="Edit"
           >
-            ✎
+            Edit
           </button>
         ) : null}
       </div>
@@ -375,18 +479,18 @@ function AttentionScreen({
       <main className="screen-fade px-4 pb-6">
         <div className="divide-y divide-[#2C2C2E]/70">
         {attentionItems.map(({ day, item }) => (
-          <article key={item.id} className={`py-4 ${item.type === 'flexible' ? 'rounded-[1.6rem] bg-[#1C1C1E] p-4' : ''}`}>
+          <article key={item.id} className={`py-4 ${item.type === 'flexible' ? 'glass-surface rounded-[1.6rem] p-4' : ''}`}>
             <p className="text-sm font-black uppercase tracking-wide text-[#FF9F0A]">{formatDateLabel(day.date)}</p>
             <div className="mt-1 flex items-start justify-between gap-3">
               <h2 className="text-xl font-black text-white">{item.title}</h2>
               <button
                 type="button"
                 onClick={() => onEditItem(day.id, item)}
-                className="ios-icon-button"
+                className="ios-quiet-button"
                 aria-label={`Edit ${item.title}`}
                 title="Edit"
               >
-                ✎
+                Edit
               </button>
             </div>
             <p className="mt-1 font-semibold text-[#A1A1A6]">{formatTimeRange(item)}</p>
@@ -413,6 +517,27 @@ type EditorState =
       draft: EditableItemFields;
     };
 
+type LandEditorActivity = {
+  id: string;
+  draft: EditableActivityFields;
+  status: ItemStatus;
+  isNew?: boolean;
+  removed?: boolean;
+};
+
+type LandEditorState = {
+  dayId: string;
+  parentItem: FlexibleBlock;
+  land: string;
+  activities: LandEditorActivity[];
+};
+
+type LightningLanePickerState = {
+  activityId: string;
+  startTime: string;
+  duration: number;
+};
+
 function ItemEditorSheet({
   editor,
   onChange,
@@ -434,7 +559,7 @@ function ItemEditorSheet({
         role="dialog"
         aria-modal="true"
         aria-labelledby="item-editor-title"
-        className="screen-fade max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-[2rem] border border-[#2C2C2E] bg-[#111111] p-5 shadow-2xl shadow-black"
+        className="glass-surface screen-fade max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-[2rem] p-5"
       >
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -446,10 +571,10 @@ function ItemEditorSheet({
           <button
             type="button"
             onClick={onCancel}
-            className="ios-icon-button"
+            className="ios-quiet-button"
             aria-label="Close editor"
           >
-            ×
+            Close
           </button>
         </div>
 
@@ -538,30 +663,403 @@ function ItemEditorSheet({
   );
 }
 
+function LandEditorSheet({
+  editor,
+  onChange,
+  onSave,
+  onCancel,
+}: {
+  editor: LandEditorState;
+  onChange: (editor: LandEditorState) => void;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  const [lightningLanePicker, setLightningLanePicker] = useState<LightningLanePickerState | null>(null);
+
+  function updateActivity(id: string, draft: EditableActivityFields) {
+    onChange({
+      ...editor,
+      activities: editor.activities.map((activity) => (activity.id === id ? { ...activity, draft } : activity)),
+    });
+  }
+
+  function updateStatus(id: string, status: ItemStatus) {
+    onChange({
+      ...editor,
+      activities: editor.activities.map((activity) => (activity.id === id ? { ...activity, status } : activity)),
+    });
+  }
+
+  function addActivity() {
+    const id = `local-activity-${editor.parentItem.id}-${Date.now()}`;
+    onChange({
+      ...editor,
+      activities: [
+        ...editor.activities,
+        {
+          id,
+          isNew: true,
+          status: 'todo',
+          draft: {
+            title: '',
+            location: editor.land,
+            notes: '',
+            lightningLaneTime: '',
+            lightningLaneEndTime: '',
+            lightningLaneLabel: '',
+          },
+        },
+      ],
+    });
+  }
+
+  function removeActivity(id: string) {
+    onChange({
+      ...editor,
+      activities: editor.activities.map((activity) => (activity.id === id ? { ...activity, removed: true } : activity)),
+    });
+  }
+
+  function moveActivity(id: string, direction: -1 | 1) {
+    const activities = [...editor.activities];
+    const index = activities.findIndex((activity) => activity.id === id);
+    const nextIndex = index + direction;
+    if (index < 0 || nextIndex < 0 || nextIndex >= activities.length) return;
+    const [activity] = activities.splice(index, 1);
+    activities.splice(nextIndex, 0, activity);
+    onChange({ ...editor, activities });
+  }
+
+  function openLightningLanePicker(activity: LandEditorActivity) {
+    const startTime = activity.draft.lightningLaneStart || activity.draft.lightningLaneTime || '12:00';
+    const endTime = activity.draft.lightningLaneEnd || activity.draft.lightningLaneEndTime;
+    const duration = endTime
+      ? Math.max(30, (Number(endTime.slice(0, 2)) * 60 + Number(endTime.slice(3, 5))) - (Number(startTime.slice(0, 2)) * 60 + Number(startTime.slice(3, 5))))
+      : 60;
+
+    setLightningLanePicker({
+      activityId: activity.id,
+      startTime,
+      duration: lightningLaneDurationOptions.includes(duration) ? duration : 60,
+    });
+  }
+
+  function saveLightningLaneWindow() {
+    if (!lightningLanePicker) return;
+
+    const endTime = addMinutesToTime(lightningLanePicker.startTime, lightningLanePicker.duration);
+    const activity = editor.activities.find((candidate) => candidate.id === lightningLanePicker.activityId);
+    if (!activity) return;
+
+    updateActivity(activity.id, {
+      ...activity.draft,
+      lightningLaneTime: lightningLanePicker.startTime,
+      lightningLaneStart: lightningLanePicker.startTime,
+      lightningLaneEndTime: endTime,
+      lightningLaneEnd: endTime,
+      lightningLaneLabel: activity.draft.lightningLaneLabel || 'LL',
+    });
+    setLightningLanePicker(null);
+  }
+
+  function clearLightningLaneWindow() {
+    if (!lightningLanePicker) return;
+    const activity = editor.activities.find((candidate) => candidate.id === lightningLanePicker.activityId);
+    if (!activity) return;
+
+    updateActivity(activity.id, {
+      ...activity.draft,
+      lightningLaneTime: '',
+      lightningLaneStart: '',
+      lightningLaneEndTime: '',
+      lightningLaneEnd: '',
+      lightningLaneLabel: '',
+    });
+    setLightningLanePicker(null);
+  }
+
+  const visibleActivities = editor.activities.filter((activity) => !activity.removed);
+  const inputClass =
+    'mt-2 min-h-12 w-full rounded-2xl border border-[#2C2C2E] bg-[#111111] px-4 text-base font-bold text-white outline-none focus:border-[#0A84FF] focus:ring-4 focus:ring-[#0A84FF]/30';
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-end bg-black/70 px-3 py-4 sm:items-center sm:justify-center" role="presentation">
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="land-editor-title"
+        className="glass-surface screen-fade max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-[2rem] p-5"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-black uppercase tracking-wide text-[#0A84FF]">Edit land card</p>
+            <h2 id="land-editor-title" className="mt-1 text-2xl font-black text-white">
+              {editor.land}
+            </h2>
+          </div>
+          <button type="button" onClick={onCancel} className="ios-quiet-button" aria-label="Close land editor">
+            Close
+          </button>
+        </div>
+
+        <div className="mt-5 space-y-5">
+          {visibleActivities.map((activity, index) => (
+            <section key={activity.id} className="glass-surface rounded-[1.35rem] p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[12px] font-black uppercase tracking-[0.16em] text-[#A1A1A6]">Ride {index + 1}</p>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => moveActivity(activity.id, -1)} className="ios-quiet-button" aria-label={`Move ${activity.draft.title || 'ride'} up`}>
+                    Up
+                  </button>
+                  <button type="button" onClick={() => moveActivity(activity.id, 1)} className="ios-quiet-button" aria-label={`Move ${activity.draft.title || 'ride'} down`}>
+                    Down
+                  </button>
+                  <button type="button" onClick={() => removeActivity(activity.id)} className="ios-quiet-button text-[#FF453A]" aria-label={`Remove ${activity.draft.title || 'ride'}`}>
+                    Remove
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-4">
+                <label className="block sm:col-span-2">
+                  <span className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Title</span>
+                  <input
+                    value={activity.draft.title}
+                    onChange={(event) => updateActivity(activity.id, { ...activity.draft, title: event.target.value })}
+                    className={inputClass}
+                    required
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Status</span>
+                  <select value={activity.status} onChange={(event) => updateStatus(activity.id, event.target.value as ItemStatus)} className={inputClass}>
+                    <option value="todo">To do</option>
+                    <option value="done">Done</option>
+                    <option value="skipped">Skipped</option>
+                  </select>
+                </label>
+                <div>
+                  <p className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Lightning Lane Window</p>
+                  <button
+                    type="button"
+                    onClick={() => openLightningLanePicker(activity)}
+                    className="mt-2 flex min-h-12 w-full items-center justify-between rounded-2xl border border-[#2C2C2E] bg-[#111111] px-4 text-left text-base font-bold text-white outline-none focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]"
+                  >
+                    <span>
+                      {formatOptionalTimeRange(activity.draft.lightningLaneStart ?? activity.draft.lightningLaneTime, activity.draft.lightningLaneEnd ?? activity.draft.lightningLaneEndTime) ?? 'Not set'}
+                    </span>
+                    <span className="text-sm text-[#A1A1A6]">Set</span>
+                  </button>
+                </div>
+                <label className="block sm:col-span-2">
+                  <span className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Notes</span>
+                  <textarea
+                    value={activity.draft.notes ?? ''}
+                    onChange={(event) => updateActivity(activity.id, { ...activity.draft, notes: event.target.value })}
+                    className="mt-2 min-h-24 w-full rounded-2xl border border-[#2C2C2E] bg-[#111111] px-4 py-3 text-base font-bold text-white outline-none focus:border-[#0A84FF] focus:ring-4 focus:ring-[#0A84FF]/30"
+                  />
+                </label>
+              </div>
+            </section>
+          ))}
+        </div>
+
+        {lightningLanePicker ? (
+          <div className="fixed inset-0 z-50 flex items-end bg-black/70 px-3 py-4 sm:items-center sm:justify-center" role="presentation">
+            <section
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="ll-picker-title"
+              className="glass-surface screen-fade max-h-[88vh] w-full max-w-xl overflow-y-auto rounded-[2rem] p-5"
+            >
+              <h3 id="ll-picker-title" className="text-2xl font-black text-white">
+                Lightning Lane Window
+              </h3>
+              <label className="mt-5 block">
+                <span className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Lightning Lane Start</span>
+                <input
+                  type="time"
+                  value={lightningLanePicker.startTime}
+                  onChange={(event) => setLightningLanePicker({ ...lightningLanePicker, startTime: event.target.value || '12:00' })}
+                  className="mt-2 min-h-12 w-full rounded-2xl border border-[#2C2C2E] bg-[#1C1C1E] px-4 text-lg font-bold text-white outline-none focus:border-[#0A84FF] focus:ring-4 focus:ring-[#0A84FF]/30"
+                />
+              </label>
+
+              <p className="mt-5 text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Duration</p>
+              <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {lightningLaneDurationOptions.map((duration) => {
+                  const selected = lightningLanePicker.duration === duration;
+                  return (
+                    <button
+                      key={duration}
+                      type="button"
+                      onClick={() => setLightningLanePicker({ ...lightningLanePicker, duration })}
+                      className={`min-h-11 rounded-full border px-3 py-2 text-sm font-black focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF] ${
+                        selected ? 'border-[#0A84FF] bg-[#0A84FF]/15 text-white ring-2 ring-[#0A84FF]' : 'border-[#2C2C2E] bg-[#1C1C1E] text-[#A1A1A6]'
+                      }`}
+                      aria-pressed={selected}
+                    >
+                      {duration} min
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="glass-surface mt-6 rounded-[1.25rem] p-4">
+                <p className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Preview</p>
+                <p className="mt-2 text-xl font-black text-white">LL window: {formatOptionalTimeRange(lightningLanePicker.startTime, addMinutesToTime(lightningLanePicker.startTime, lightningLanePicker.duration))}</p>
+              </div>
+
+              <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-end">
+                <button type="button" onClick={() => setLightningLanePicker(null)} className="min-h-12 rounded-full border border-[#3A3A3C] bg-[#1C1C1E] px-5 py-2 font-black text-white focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]">
+                  Cancel
+                </button>
+                <button type="button" onClick={clearLightningLaneWindow} className="min-h-12 rounded-full border border-[#FF453A] bg-[#1C1C1E] px-5 py-2 font-black text-[#FF453A] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#FF453A]">
+                  Clear
+                </button>
+                <button type="button" onClick={saveLightningLaneWindow} className="min-h-12 rounded-full bg-[#0A84FF] px-5 py-2 font-black text-black focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]">
+                  Save
+                </button>
+              </div>
+            </section>
+          </div>
+        ) : null}
+
+        <button
+          type="button"
+          onClick={addActivity}
+          className="mt-5 min-h-12 w-full rounded-full border border-[#3A3A3C] bg-[#1C1C1E] px-5 py-2 font-black text-white focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]"
+        >
+          Add ride
+        </button>
+
+        <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="min-h-12 rounded-full border border-[#3A3A3C] bg-[#1C1C1E] px-5 py-2 font-black text-white focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onSave}
+            className="min-h-12 rounded-full bg-[#0A84FF] px-5 py-2 font-black text-black focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]"
+          >
+            Save
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function FlexibleTimelineItem({
+  day,
+  item,
+  statuses,
+  onCycleStatus,
+  onEditItem,
+  onEditLand,
+}: {
+  day: TripDay;
+  item: FlexibleBlock;
+  statuses: Record<string, ItemStatus>;
+  onCycleStatus: (id: string) => void;
+  onEditItem: (dayId: string, item: TripItem) => void;
+  onEditLand: (day: TripDay, item: FlexibleBlock, land: string, activities: Activity[]) => void;
+}) {
+  const itemStatus = statuses[getItemStatusKey(item)];
+  const groups = groupActivitiesByLand(day, item);
+
+  return (
+    <article className="py-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-[12px] font-black uppercase tracking-[0.16em] text-[#0A84FF]">{formatTimeRange(item)}</p>
+          <p className="mt-2 text-[15px] font-semibold text-[#A1A1A6]">{item.location}</p>
+        </div>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => onEditItem(day.id, item)}
+            className="ios-quiet-button"
+            aria-label={`Edit ${item.title}`}
+            title="Edit"
+          >
+            Edit
+          </button>
+          <StatusButton id={item.id} status={itemStatus} onCycle={onCycleStatus} />
+        </div>
+      </div>
+
+      {item.notes ? <p className="mt-4 text-[15px] leading-6 text-[#A1A1A6]">{item.notes}</p> : null}
+
+      <div className="mt-6 space-y-7">
+        {groups.map((group) => (
+          <section key={`${item.id}-${group.land}`} aria-label={`${item.title} ${group.land}`} className="glass-surface rounded-[1.35rem] px-4 py-4">
+            <div className="flex items-center justify-between gap-3">
+              <h4 className="text-[13px] font-black uppercase tracking-[0.18em] text-white">{group.land}</h4>
+              <button
+                type="button"
+                onClick={() => onEditLand(day, item, group.land, group.activities)}
+                className="ios-quiet-button"
+                aria-label={`Edit ${group.land}`}
+                title={`Edit ${group.land}`}
+              >
+                <LucideIcon name="pencil" size={16} className="text-[#A1A1A6]" />
+              </button>
+            </div>
+            <ul className="mt-3 divide-y divide-[#2C2C2E]/70">
+              {group.activities.map((activity) => {
+                const statusKey = getActivityStatusKey(item, activity);
+                const lightningLaneTime = formatLightningLane(activity);
+
+                return (
+                  <li key={activity.id} className="flex min-h-16 items-center justify-between gap-4 py-3">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-[16px] font-bold text-white">{activity.title}</p>
+                        {lightningLaneTime ? (
+                          <span className="rounded-full border border-[#0A84FF]/30 bg-[#0A84FF]/10 px-2 py-1 text-[12px] font-black text-[#0A84FF]">
+                            {activity.lightningLaneLabel || 'LL'} {lightningLaneTime}
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="mt-1 text-[14px] text-[#A1A1A6]">{activity.location}</p>
+                      {activity.notes ? <p className="mt-2 text-[14px] leading-5 text-[#A1A1A6]">{activity.notes}</p> : null}
+                    </div>
+                    <StatusButton id={statusKey} status={statuses[statusKey]} onCycle={onCycleStatus} />
+                  </li>
+                );
+              })}
+              {group.activities.length === 0 ? <li className="py-3 text-[15px] text-[#A1A1A6]">No activities listed for this flexible block.</li> : null}
+            </ul>
+          </section>
+        ))}
+      </div>
+    </article>
+  );
+}
+
 function DayTimeline({
   day,
   statuses,
   onCycleStatus,
   onEditItem,
   onAddItem,
+  onEditLand,
 }: {
   day: TripDay;
   statuses: Record<string, ItemStatus>;
   onCycleStatus: (id: string) => void;
   onEditItem: (dayId: string, item: TripItem) => void;
   onAddItem: (dayId: string) => void;
+  onEditLand: (day: TripDay, item: FlexibleBlock, land: string, activities: Activity[]) => void;
 }) {
-  const attentionCount = day.items.filter(itemNeedsAttention).length;
-  const groups = ['Morning', 'Afternoon', 'Evening', 'Flexible']
-    .map((label) => ({
-      label,
-      items: day.items.filter((item) => getTimeOfDay(item) === label),
-    }))
-    .filter((group) => group.items.length > 0);
-
   return (
     <section aria-labelledby={`${day.id}-heading`} className="section-rise px-4 py-8">
-      <div className="mb-5 rounded-[1.5rem] bg-[#111111] px-4 py-4">
+      <div className="glass-surface mb-5 rounded-[1.5rem] px-4 py-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <p className="text-[12px] font-black uppercase tracking-[0.16em] text-[#0A84FF]">{formatDateLabel(day.date)}</p>
@@ -570,11 +1068,6 @@ function DayTimeline({
             </h2>
             <p className="mt-1 text-[15px] font-semibold text-[#A1A1A6]">{day.park}</p>
           </div>
-          {attentionCount > 0 ? (
-            <p className="rounded-full bg-[#FF9F0A] px-3 py-1 text-[12px] font-black text-black">
-              {attentionCount} attention
-            </p>
-          ) : null}
         </div>
       </div>
       <button
@@ -584,25 +1077,28 @@ function DayTimeline({
       >
         Add item
       </button>
-      <div className="space-y-8">
-        {groups.map((group) => (
-          <section key={group.label} aria-label={`${day.label} ${group.label}`} className="space-y-3">
-            <h3 className="border-b border-[#2C2C2E]/70 pb-2 text-[12px] font-black uppercase tracking-[0.18em] text-[#A1A1A6]">
-              {group.label}
-            </h3>
-            <div className="divide-y divide-[#2C2C2E]/70">
-              {group.items.map((item) => (
-                <ItemCard
-                  key={item.id}
-                  item={item}
-                  statuses={statuses}
-                  onCycleStatus={onCycleStatus}
-                  onEdit={(selectedItem) => onEditItem(day.id, selectedItem)}
-                />
-              ))}
-            </div>
-          </section>
-        ))}
+      <div className="divide-y divide-[#2C2C2E]/70">
+        {day.items.map((item) =>
+          item.type === 'flexible' ? (
+            <FlexibleTimelineItem
+              key={item.id}
+              day={day}
+              item={item}
+              statuses={statuses}
+              onCycleStatus={onCycleStatus}
+              onEditItem={onEditItem}
+              onEditLand={onEditLand}
+            />
+          ) : (
+            <ItemCard
+              key={item.id}
+              item={item}
+              statuses={statuses}
+              onCycleStatus={onCycleStatus}
+              onEdit={(selectedItem) => onEditItem(day.id, selectedItem)}
+            />
+          ),
+        )}
       </div>
     </section>
   );
@@ -614,26 +1110,21 @@ function AllDaysScreen({
   days,
   onEditItem,
   onAddItem,
-  title = 'All Days',
-  description = 'Fixed reservations and transport stay timed. Ride groups stay flexible and grouped.',
+  onEditLand,
 }: {
   statuses: Record<string, ItemStatus>;
   onCycleStatus: (id: string) => void;
   days: TripDay[];
   onEditItem: (dayId: string, item: TripItem) => void;
   onAddItem: (dayId: string) => void;
-  title?: string;
-  description?: string;
+  onEditLand: (day: TripDay, item: FlexibleBlock, land: string, activities: Activity[]) => void;
 }) {
   return (
-    <>
-      <ScreenHeader eyebrow="Timeline" title={title}>
-        {description}
-      </ScreenHeader>
+    <main className="screen-fade pt-2">
       {days.map((day) => (
-        <DayTimeline key={day.id} day={day} statuses={statuses} onCycleStatus={onCycleStatus} onEditItem={onEditItem} onAddItem={onAddItem} />
+        <DayTimeline key={day.id} day={day} statuses={statuses} onCycleStatus={onCycleStatus} onEditItem={onEditItem} onAddItem={onAddItem} onEditLand={onEditLand} />
       ))}
-    </>
+    </main>
   );
 }
 
@@ -659,11 +1150,11 @@ function ReservationsScreen({
               <button
                 type="button"
                 onClick={() => onEditItem(day.id, item)}
-                className="ios-icon-button"
+                className="ios-quiet-button"
                 aria-label={`Edit ${item.title}`}
                 title="Edit"
               >
-                ✎
+                Edit
               </button>
             </div>
             <p className="mt-1 font-semibold text-[#A1A1A6]">{formatTimeRange(item)}</p>
@@ -692,7 +1183,7 @@ function NotesScreen({
       </ScreenHeader>
       <main className="screen-fade space-y-4 px-4 pb-6">
         {days.map((day) => (
-          <label key={day.id} className="block rounded-[1.6rem] border border-[#2C2C2E] bg-[#1C1C1E] p-4">
+          <label key={day.id} className="glass-surface block rounded-[1.6rem] p-4">
             <span className="block text-lg font-black text-white">{day.label}</span>
             <span className="mt-1 block text-sm text-[#A1A1A6]">{formatDateLabel(day.date)}</span>
             <textarea
@@ -713,6 +1204,7 @@ export default function App() {
   const [selectedDayId, setSelectedDayId] = useState<string | null>(null);
   const [now, setNow] = useState(() => new Date());
   const [editor, setEditor] = useState<EditorState | null>(null);
+  const [landEditor, setLandEditor] = useState<LandEditorState | null>(null);
   const tripStorage = useTripStorage();
 
   useEffect(() => {
@@ -721,8 +1213,17 @@ export default function App() {
   }, []);
 
   const tripDays = useMemo(
-    () => mergeTripEdits(baseTripDays, tripStorage.itemEdits, tripStorage.addedItems, tripStorage.deletedItemIds),
-    [tripStorage.addedItems, tripStorage.deletedItemIds, tripStorage.itemEdits],
+    () =>
+      mergeTripEdits(
+        baseTripDays,
+        tripStorage.itemEdits,
+        tripStorage.addedItems,
+        tripStorage.deletedItemIds,
+        tripStorage.activityEdits,
+        tripStorage.addedActivities,
+        tripStorage.deletedActivityIds,
+      ),
+    [tripStorage.activityEdits, tripStorage.addedActivities, tripStorage.addedItems, tripStorage.deletedActivityIds, tripStorage.deletedItemIds, tripStorage.itemEdits],
   );
   const reservations = useMemo(() => getReservations(tripDays), [tripDays]);
   const attentionItems = useMemo(() => getAttentionItems(tripDays), [tripDays]);
@@ -775,6 +1276,22 @@ export default function App() {
     });
   }
 
+  function openLandEditor(day: TripDay, item: FlexibleBlock, land: string, activities: Activity[]) {
+    setLandEditor({
+      dayId: day.id,
+      parentItem: item,
+      land,
+      activities: activities.map((activity) => ({
+        id: activity.id,
+        status: tripStorage.statuses[getActivityStatusKey(item, activity)] ?? 'todo',
+        draft: {
+          ...toEditableActivityFields(activity),
+          displayOrder: item.activities.findIndex((candidate) => candidate.id === activity.id),
+        },
+      })),
+    });
+  }
+
   function saveEditor() {
     if (!editor) return;
 
@@ -794,17 +1311,82 @@ export default function App() {
     setEditor(null);
   }
 
+  function saveLandEditor() {
+    if (!landEditor) return;
+
+    const visibleActivities = landEditor.activities.filter((activity) => !activity.removed);
+    if (visibleActivities.some((activity) => !activity.draft.title.trim())) {
+      window.alert('Each ride needs a title before saving.');
+      return;
+    }
+
+    const baseDisplayOrder = Math.min(
+      ...visibleActivities.map((activity) => activity.draft.displayOrder ?? landEditor.parentItem.activities.length),
+      landEditor.parentItem.activities.length,
+    );
+
+    landEditor.activities.forEach((activity) => {
+      if (activity.removed) {
+        if (!activity.isNew) tripStorage.deleteActivity(landEditor.dayId, landEditor.parentItem.id, activity.id);
+        return;
+      }
+
+      const currentIndex = visibleActivities.findIndex((candidate) => candidate.id === activity.id);
+      const draft = {
+        ...activity.draft,
+        title: activity.draft.title.trim(),
+        location: activity.draft.location.trim() || landEditor.land,
+        time: '',
+        endTime: '',
+        lightningLaneStart: activity.draft.lightningLaneTime ?? activity.draft.lightningLaneStart,
+        lightningLaneEnd: activity.draft.lightningLaneEndTime ?? activity.draft.lightningLaneEnd,
+        displayOrder: baseDisplayOrder + currentIndex,
+      };
+      const savedActivity = createActivityFromFields(activity.id, draft);
+
+      console.log('Ride edit payload saved', {
+        dayId: landEditor.dayId,
+        parentItemId: landEditor.parentItem.id,
+        activityId: activity.id,
+        action: activity.isNew ? 'add' : 'edit',
+        payload: activity.isNew ? savedActivity : draft,
+      });
+
+      if (activity.isNew) {
+        tripStorage.addActivity(landEditor.dayId, landEditor.parentItem.id, savedActivity);
+      } else {
+        tripStorage.saveActivityEdit(landEditor.dayId, landEditor.parentItem.id, activity.id, draft);
+      }
+
+      const statusKey = `${landEditor.parentItem.id}:${activity.id}`;
+      if ((tripStorage.statuses[statusKey] ?? 'todo') !== activity.status) {
+        tripStorage.setStatus(statusKey, activity.status);
+      }
+    });
+
+    setLandEditor(null);
+  }
+
   return (
-    <div className="min-h-screen bg-[#000000] text-white">
-      <div key={`${activeTab}-${selectedDayId ?? 'all'}`} className={`screen-fade mx-auto max-w-4xl ${phase === 'before' ? 'pb-8' : 'pb-20'}`}>
+    <div className="relative min-h-screen text-white">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-0 z-0 bg-[url('/disneymayhem-background.jpg')] bg-cover bg-[center_top] bg-no-repeat"
+      />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-0 z-[1] bg-[linear-gradient(to_bottom,rgba(0,0,0,0.12),rgba(0,0,0,0.38))]"
+      />
+      <div key={`${activeTab}-${selectedDayId ?? 'all'}`} className={`screen-fade relative z-10 mx-auto max-w-4xl ${phase === 'before' ? 'pb-8' : 'pb-20'}`}>
         {phase === 'before' && activeTab !== 'today' ? (
-          <div className="px-4 pt-5">
+          <div className="sticky top-0 z-20 px-4 pb-2 pt-3 backdrop-blur-sm">
             <button
               type="button"
               onClick={openDashboard}
-              className="min-h-11 rounded-full bg-[#1C1C1E] px-4 py-2 text-sm font-black text-white transition hover:bg-[#2C2C2E] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]"
+              className="flex min-h-11 min-w-11 items-center justify-center rounded-full border border-[#2C2C2E]/80 bg-[#1C1C1E]/95 text-white shadow-lg shadow-black/30 transition hover:bg-[#2C2C2E] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]"
+              aria-label="Back to dashboard"
             >
-              Dashboard
+              <LucideIcon name="chevron-left" size={24} className="text-[#A1A1A6]" />
             </button>
           </div>
         ) : null}
@@ -831,12 +1413,7 @@ export default function App() {
             onCycleStatus={tripStorage.cycleStatus}
             onEditItem={openEditItem}
             onAddItem={openAddItem}
-            title={selectedTimelineDay ? selectedTimelineDay.label : 'All Days'}
-            description={
-              selectedTimelineDay
-                ? `${formatDateLabel(selectedTimelineDay.date)} · ${selectedTimelineDay.park}`
-                : 'Fixed reservations and transport stay timed. Ride groups stay flexible and grouped.'
-            }
+            onEditLand={openLandEditor}
           />
         ) : null}
         {activeTab === 'attention' ? <AttentionScreen statuses={tripStorage.statuses} attentionItems={attentionItems} onEditItem={openEditItem} /> : null}
@@ -853,6 +1430,14 @@ export default function App() {
           onSave={saveEditor}
           onCancel={() => setEditor(null)}
           onDelete={deleteEditorItem}
+        />
+      ) : null}
+      {landEditor ? (
+        <LandEditorSheet
+          editor={landEditor}
+          onChange={setLandEditor}
+          onSave={saveLandEditor}
+          onCancel={() => setLandEditor(null)}
         />
       ) : null}
     </div>

@@ -1,4 +1,5 @@
-import type { EditableItemFields, ScheduledItem, TripDay, TripItem } from '../types';
+import type { Activity, EditableActivityFields, EditableItemFields, FlexibleBlock, ScheduledItem, TripDay, TripItem } from '../types';
+import { withTripDayGroups } from './landBlocks';
 
 export function toEditableFields(item: TripItem): EditableItemFields {
   return {
@@ -62,21 +63,98 @@ function applyEdit(item: TripItem, fields?: EditableItemFields): TripItem {
   return updated;
 }
 
+export function toEditableActivityFields(activity: Activity): EditableActivityFields {
+  return {
+    title: activity.title,
+    location: activity.location,
+    notes: activity.notes ?? '',
+    time: activity.time ?? '',
+    endTime: activity.endTime ?? '',
+    lightningLaneTime: activity.lightningLaneTime ?? activity.lightningLaneStart ?? '',
+    lightningLaneEndTime: activity.lightningLaneEndTime ?? activity.lightningLaneEnd ?? '',
+    lightningLaneStart: activity.lightningLaneStart ?? activity.lightningLaneTime ?? '',
+    lightningLaneEnd: activity.lightningLaneEnd ?? activity.lightningLaneEndTime ?? '',
+    lightningLaneLabel: activity.lightningLaneLabel ?? '',
+    displayOrder: activity.displayOrder,
+  };
+}
+
+export function createActivityFromFields(id: string, fields: EditableActivityFields): Activity {
+  return {
+    id,
+    title: fields.title.trim(),
+    location: fields.location.trim(),
+    notes: fields.notes?.trim() || undefined,
+    time: fields.time || undefined,
+    endTime: fields.endTime || undefined,
+    lightningLaneTime: fields.lightningLaneTime || fields.lightningLaneStart || undefined,
+    lightningLaneEndTime: fields.lightningLaneEndTime || fields.lightningLaneEnd || undefined,
+    lightningLaneStart: fields.lightningLaneStart || fields.lightningLaneTime || undefined,
+    lightningLaneEnd: fields.lightningLaneEnd || fields.lightningLaneEndTime || undefined,
+    lightningLaneLabel: fields.lightningLaneLabel?.trim() || undefined,
+    displayOrder: fields.displayOrder,
+  };
+}
+
+function applyActivityEdits(
+  item: TripItem,
+  activityEdits: Record<string, EditableActivityFields>,
+  addedActivities: Record<string, Activity[]>,
+  deletedActivityIds: Set<string>,
+): TripItem {
+  if (item.type !== 'flexible') return item;
+
+  const activities = [
+    ...item.activities.filter((activity) => !deletedActivityIds.has(activity.id)),
+    ...(addedActivities[item.id] ?? []).filter((activity) => !deletedActivityIds.has(activity.id)),
+  ]
+    .map((activity) => {
+      const fields = activityEdits[activity.id];
+      if (!fields) return activity;
+
+      const mergedActivity = { ...activity, ...createActivityFromFields(activity.id, fields) };
+      console.log('Merge result for edited ride', {
+        activityId: activity.id,
+        payload: fields,
+        mergedActivity,
+      });
+      return mergedActivity;
+    })
+    .sort((left, right) => {
+      const leftOrder = left.displayOrder ?? Number.MAX_SAFE_INTEGER;
+      const rightOrder = right.displayOrder ?? Number.MAX_SAFE_INTEGER;
+      return leftOrder - rightOrder;
+    });
+
+  return {
+    ...item,
+    activities,
+  } satisfies FlexibleBlock;
+}
+
 export function mergeTripEdits(
   baseDays: TripDay[],
   itemEdits: Record<string, EditableItemFields>,
   addedItems: Record<string, TripItem[]>,
   deletedItemIds: string[],
+  activityEdits: Record<string, EditableActivityFields> = {},
+  addedActivities: Record<string, Activity[]> = {},
+  deletedActivityIds: string[] = [],
 ): TripDay[] {
   const deleted = new Set(deletedItemIds);
+  const deletedActivities = new Set(deletedActivityIds);
 
-  return baseDays.map((day) => ({
-    ...day,
-    items: [
+  return baseDays.map((day) => {
+    const items = [
       ...day.items.filter((item) => !deleted.has(item.id)).map((item) => applyEdit(item, itemEdits[item.id])),
       ...(addedItems[day.id] ?? []).filter((item) => !deleted.has(item.id)).map((item) => applyEdit(item, itemEdits[item.id])),
-    ],
-  }));
+    ].map((item) => applyActivityEdits(item, activityEdits, addedActivities, deletedActivities));
+
+    return withTripDayGroups({
+      ...day,
+      items,
+    });
+  });
 }
 
 export function getReservations(days: TripDay[]) {
