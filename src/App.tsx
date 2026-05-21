@@ -6,7 +6,7 @@ import { StatusButton } from './components/StatusButton';
 import { AppTab, Tabs } from './components/Tabs';
 import { tripDays as baseTripDays, tripEndDate, tripStartDate } from './data/tripData';
 import { useTripStorage } from './hooks/useTripStorage';
-import type { Activity, EditableActivityFields, EditableItemFields, FlexibleBlock, ItemStatus, LandBlock, TripDay, TripItem } from './types';
+import type { Activity, EditableActivityFields, EditableItemFields, FlexibleBlock, ItemStatus, LandBlock, ParkName, TripDay, TripItem } from './types';
 import {
   createActivityFromFields,
   createItemFromFields,
@@ -194,22 +194,62 @@ type WeatherIntel =
       stormChance?: number;
     };
 
+type ParkActivityLevel = 'Low' | 'Moderate' | 'Heavy' | 'Mayhem';
+
+type ParkActivityIntel =
+  | {
+      status: 'not-applicable';
+    }
+  | {
+      status: 'loading';
+    }
+  | {
+      status: 'unavailable';
+    }
+  | {
+      status: 'error';
+    }
+  | {
+      status: 'ready';
+      level: ParkActivityLevel;
+      averageWait: number;
+      activeRideCount: number;
+      downRideCount: number;
+    };
+
+type ThemeParksEntity = {
+  id?: string;
+  name?: string;
+  entityType?: string;
+};
+
+type ThemeParksLiveEntry = {
+  id?: string;
+  name?: string;
+  entityType?: string;
+  status?: string;
+  queue?: {
+    STANDBY?: {
+      waitTime?: number | null;
+    };
+  };
+};
+
+let parkActivityCache:
+  | {
+      expiresAt: number;
+      data: Partial<Record<ParkName, ParkActivityIntel>>;
+    }
+  | undefined;
+
 const openMeteoUrl =
   'https://api.open-meteo.com/v1/forecast?latitude=28.3772&longitude=-81.5707&current=temperature_2m,precipitation,weather_code&hourly=temperature_2m,precipitation_probability,weather_code&daily=temperature_2m_max,precipitation_probability_max,weather_code&temperature_unit=fahrenheit&timezone=America%2FNew_York&forecast_days=16';
 
-const crowdCalendarUrl = 'https://www.undercovertourist.com/orlando/crowd-calendar/';
-const configuredCrowdLevel: number | undefined = undefined;
+const themeParksDestinationId = 'e957da41-3552-4cf6-b636-5babc5cbc4e5';
+const themeParksCacheMs = 10 * 60 * 1000;
 
 function hasStormCode(code: unknown): boolean {
   return typeof code === 'number' && code >= 95 && code <= 99;
-}
-
-function formatCrowdLevel(crowdLevel?: number): string | undefined {
-  if (crowdLevel === undefined) return undefined;
-  if (crowdLevel >= 1 && crowdLevel <= 3) return `${crowdLevel}/10 Low`;
-  if (crowdLevel >= 4 && crowdLevel <= 6) return `${crowdLevel}/10 Moderate`;
-  if (crowdLevel >= 7 && crowdLevel <= 10) return `${crowdLevel}/10 Heavy`;
-  return undefined;
 }
 
 function isMeaningfulRideActivity(item: FlexibleBlock, activity: Activity): boolean {
@@ -234,6 +274,159 @@ function isMeaningfulRideActivity(item: FlexibleBlock, activity: Activity): bool
 function shouldShowRideIntelForDay(day: TripDay): boolean {
   if (day.park === 'Travel Day' || day.park === 'Resort Day') return false;
   return !day.label.toLowerCase().includes('travel');
+}
+
+function getSupportedParkName(park: ParkName): Exclude<ParkName, 'Travel Day' | 'Resort Day'> | undefined {
+  if (park === 'Magic Kingdom' || park === 'EPCOT' || park === 'Hollywood Studios' || park === 'Animal Kingdom') return park;
+  return undefined;
+}
+
+function getDebugParkActivityOverride(): Exclude<ParkName, 'Travel Day' | 'Resort Day'> | undefined {
+  const value = import.meta.env.VITE_DEBUG_PARK_ACTIVITY_PARK;
+  if (value === 'magic-kingdom') return 'Magic Kingdom';
+  if (value === 'epcot') return 'EPCOT';
+  if (value === 'hollywood-studios') return 'Hollywood Studios';
+  if (value === 'animal-kingdom') return 'Animal Kingdom';
+  return undefined;
+}
+
+function normalizeParkEntityName(name = ''): ParkName | undefined {
+  const normalized = name.toLowerCase();
+  if (normalized.includes('magic kingdom')) return 'Magic Kingdom';
+  if (normalized.includes('epcot')) return 'EPCOT';
+  if (normalized.includes('hollywood studios')) return 'Hollywood Studios';
+  if (normalized.includes('animal kingdom')) return 'Animal Kingdom';
+  return undefined;
+}
+
+function getParkActivityLevel(averageWait: number, downRideCount: number, activeRideCount: number): ParkActivityLevel {
+  const downPressure = activeRideCount > 0 && downRideCount / (activeRideCount + downRideCount) >= 0.25 ? 10 : 0;
+  const adjustedWait = averageWait + downPressure;
+  if (adjustedWait < 25) return 'Low';
+  if (adjustedWait <= 45) return 'Moderate';
+  if (adjustedWait <= 70) return 'Heavy';
+  return 'Mayhem';
+}
+
+function getParkActivityTone(level: ParkActivityLevel): string {
+  if (level === 'Low') return 'text-[#30D158]';
+  if (level === 'Moderate') return 'text-[#FFD60A]';
+  if (level === 'Heavy') return 'text-[#FF9F0A]';
+  return 'text-[#FF2D55]';
+}
+
+function getWaitTime(entry: ThemeParksLiveEntry): number | undefined {
+  const waitTime = entry.queue?.STANDBY?.waitTime;
+  return typeof waitTime === 'number' && Number.isFinite(waitTime) && waitTime >= 0 ? waitTime : undefined;
+}
+
+function calculateParkActivity(entries: ThemeParksLiveEntry[]): ParkActivityIntel {
+  const attractions = entries.filter((entry) => entry.entityType === 'ATTRACTION');
+  const operatingWaits = attractions
+    .filter((entry) => entry.status === 'OPERATING')
+    .map(getWaitTime)
+    .filter((waitTime): waitTime is number => waitTime !== undefined);
+  const downRideCount = attractions.filter((entry) => entry.status === 'DOWN' || entry.status === 'TEMPORARILY_DOWN').length;
+
+  if (operatingWaits.length === 0) return { status: 'unavailable' };
+
+  const averageWait = Math.round(operatingWaits.reduce((total, waitTime) => total + waitTime, 0) / operatingWaits.length);
+
+  return {
+    status: 'ready',
+    averageWait,
+    activeRideCount: operatingWaits.length,
+    downRideCount,
+    level: getParkActivityLevel(averageWait, downRideCount, operatingWaits.length),
+  };
+}
+
+async function fetchThemeParksActivity(signal: AbortSignal): Promise<Partial<Record<ParkName, ParkActivityIntel>>> {
+  const childrenUrl = `https://api.themeparks.wiki/v1/entity/${themeParksDestinationId}/children`;
+  console.log('ThemeParks activity fetch URL', childrenUrl);
+  const childrenResponse = await fetch(childrenUrl, { signal });
+  if (!childrenResponse.ok) throw new Error(`ThemeParks children request failed: ${childrenResponse.status}`);
+
+  const childrenData = await childrenResponse.json();
+  const entities: ThemeParksEntity[] = Array.isArray(childrenData.children) ? childrenData.children : [];
+  const parkEntities = entities
+    .map((entity) => ({ entity, park: normalizeParkEntityName(entity.name) }))
+    .filter((entry): entry is { entity: ThemeParksEntity; park: Exclude<ParkName, 'Travel Day' | 'Resort Day'> } => Boolean(entry.entity.id && entry.park));
+
+  const liveResults = await Promise.all(
+    parkEntities.map(async ({ entity, park }) => {
+      const liveUrl = `https://api.themeparks.wiki/v1/entity/${entity.id}/live`;
+      console.log('ThemeParks activity fetch URL', liveUrl);
+      const liveResponse = await fetch(liveUrl, { signal });
+      if (!liveResponse.ok) throw new Error(`ThemeParks live request failed for ${park}: ${liveResponse.status}`);
+      const liveData = await liveResponse.json();
+      const entries: ThemeParksLiveEntry[] = Array.isArray(liveData.liveData) ? liveData.liveData : [];
+      return [park, calculateParkActivity(entries)] as const;
+    }),
+  );
+
+  return Object.fromEntries(liveResults);
+}
+
+function useParkActivityIntel(day: TripDay, phase: ReturnType<typeof getTripPhase>): ParkActivityIntel {
+  const debugPark = getDebugParkActivityOverride();
+  const supportedPark = debugPark ?? (phase === 'during' ? getSupportedParkName(day.park) : undefined);
+  const [activity, setActivity] = useState<ParkActivityIntel>(() => (supportedPark ? { status: 'loading' } : { status: 'not-applicable' }));
+
+  useEffect(() => {
+    if (debugPark) {
+      console.log(`Park Activity debug override active: ${debugPark}`);
+    }
+    console.log('Park Activity debug', {
+      dayTitle: day.label,
+      date: day.date,
+      detectedPark: supportedPark ?? day.park,
+      skipped: !supportedPark,
+      phase,
+      override: debugPark,
+    });
+
+    if (!supportedPark) {
+      setActivity({ status: 'not-applicable' });
+      return;
+    }
+    const parkName = supportedPark;
+
+    const cached = parkActivityCache;
+    if (cached && cached.expiresAt > Date.now()) {
+      console.log('ThemeParks activity cache hit', { park: parkName });
+      setActivity(cached.data[parkName] ?? { status: 'unavailable' });
+      return;
+    }
+
+    const controller = new AbortController();
+    setActivity({ status: 'loading' });
+
+    async function fetchActivity() {
+      try {
+        const data = await fetchThemeParksActivity(controller.signal);
+        parkActivityCache = {
+          expiresAt: Date.now() + themeParksCacheMs,
+          data,
+        };
+        console.log('ThemeParks activity API success', {
+          park: parkName,
+          result: data[parkName] ?? null,
+        });
+        setActivity(data[parkName] ?? { status: 'unavailable' });
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          console.error('ThemeParks activity API error', error);
+          setActivity({ status: 'error' });
+        }
+      }
+    }
+
+    void fetchActivity();
+    return () => controller.abort();
+  }, [debugPark, day.date, day.label, day.park, phase, supportedPark]);
+
+  return activity;
 }
 
 function useWeatherIntel(date: string): WeatherIntel {
@@ -348,11 +541,22 @@ function TodayIntelCard({
   countdown?: ReturnType<typeof getDepartureCountdown>;
 }) {
   const weather = useWeatherIntel(day.date);
+  const parkActivity = useParkActivityIntel(day, phase);
   const intel = getDayIntel(day, statuses);
   const title = getIntelTitle(day, phase, countdown);
   const reservationText = intel.reservationCount > 0 ? String(intel.reservationCount) : '—';
   const rideText = intel.activityCount > 0 ? `${intel.completedActivityCount}/${intel.activityCount} done` : '—';
-  const crowdText = formatCrowdLevel(configuredCrowdLevel);
+  const parkActivityText =
+    parkActivity.status === 'not-applicable'
+      ? '—'
+      : parkActivity.status === 'loading'
+        ? 'Checking…'
+        : parkActivity.status === 'unavailable'
+          ? 'Unavailable'
+          : parkActivity.status === 'error'
+            ? 'Connection error'
+            : parkActivity.level;
+  const parkActivityClass = parkActivity.status === 'ready' ? getParkActivityTone(parkActivity.level) : 'text-white';
   const weatherText =
     weather.status === 'loading'
       ? 'Loading forecast'
@@ -387,13 +591,9 @@ function TodayIntelCard({
           <dd className="text-right text-[15px] font-semibold text-white">{weatherText}</dd>
         </div>
         <div className="grid grid-cols-[auto_1fr] gap-x-3 py-3">
-          <dt className="text-[13px] font-black uppercase tracking-[0.14em] text-[#A1A1A6]">Crowds</dt>
-          <dd className="text-right text-[15px] font-semibold text-white">
-            {crowdText ?? (
-              <a className="text-[#0A84FF] underline decoration-[#0A84FF]/40 underline-offset-4" href={crowdCalendarUrl} target="_blank" rel="noreferrer">
-                External check: Check trusted calendar
-              </a>
-            )}
+          <dt className="text-[13px] font-black uppercase tracking-[0.14em] text-[#A1A1A6]">Park Activity</dt>
+          <dd className={`text-right text-[15px] font-black ${parkActivityClass}`}>
+            {parkActivityText}
           </dd>
         </div>
         <div className="grid grid-cols-[auto_1fr] gap-x-3 py-3">
