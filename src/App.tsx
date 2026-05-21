@@ -12,6 +12,7 @@ import {
   createItemFromFields,
   getAttentionItems,
   getReservations,
+  isReservationItem,
   mergeTripEdits,
   toEditableActivityFields,
   toEditableFields,
@@ -26,6 +27,7 @@ import {
   getActivityStatusKey,
   getDepartureCountdown,
   getItemStatusKey,
+  getItemStart,
   getTripPhase,
 } from './utils/time';
 
@@ -77,6 +79,31 @@ function formatShortTimeRange(time?: string, endTime?: string): string | undefin
 
 function formatLightningLane(activity: Activity): string | undefined {
   return formatShortTimeRange(activity.lightningLaneTime ?? activity.lightningLaneStart, activity.lightningLaneEndTime ?? activity.lightningLaneEnd);
+}
+
+function getItemConfirmationNumber(item: TripItem): string | undefined {
+  return item.type === 'reservation' ? item.confirmationNumber : undefined;
+}
+
+function groupReservationsByDay(reservations: ReturnType<typeof getReservations>) {
+  const groups: { day: TripDay; items: TripItem[] }[] = [];
+
+  reservations.forEach(({ day, item }) => {
+    const existing = groups.find((group) => group.day.id === day.id);
+    if (existing) {
+      existing.items.push(item);
+      return;
+    }
+
+    groups.push({ day, items: [item] });
+  });
+
+  return groups
+    .sort((left, right) => left.day.date.localeCompare(right.day.date))
+    .map((group) => ({
+      ...group,
+      items: [...group.items].sort((left, right) => getItemStart(left) - getItemStart(right)),
+    }));
 }
 
 function addMinutesToTime(time: string, minutesToAdd: number): string {
@@ -152,6 +179,236 @@ function DashboardTile({
   );
 }
 
+type WeatherIntel =
+  | {
+      status: 'loading';
+    }
+  | {
+      status: 'error';
+    }
+  | {
+      status: 'ready';
+      currentTemp?: number;
+      highTemp?: number;
+      rainChance?: number;
+      stormChance?: number;
+    };
+
+const openMeteoUrl =
+  'https://api.open-meteo.com/v1/forecast?latitude=28.3772&longitude=-81.5707&current=temperature_2m,precipitation,weather_code&hourly=temperature_2m,precipitation_probability,weather_code&daily=temperature_2m_max,precipitation_probability_max,weather_code&temperature_unit=fahrenheit&timezone=America%2FNew_York&forecast_days=16';
+
+const crowdCalendarUrl = 'https://www.undercovertourist.com/orlando/crowd-calendar/';
+const configuredCrowdLevel: number | undefined = undefined;
+
+function hasStormCode(code: unknown): boolean {
+  return typeof code === 'number' && code >= 95 && code <= 99;
+}
+
+function formatCrowdLevel(crowdLevel?: number): string | undefined {
+  if (crowdLevel === undefined) return undefined;
+  if (crowdLevel >= 1 && crowdLevel <= 3) return `${crowdLevel}/10 Low`;
+  if (crowdLevel >= 4 && crowdLevel <= 6) return `${crowdLevel}/10 Moderate`;
+  if (crowdLevel >= 7 && crowdLevel <= 10) return `${crowdLevel}/10 Heavy`;
+  return undefined;
+}
+
+function isMeaningfulRideActivity(item: FlexibleBlock, activity: Activity): boolean {
+  const title = activity.title.trim();
+  if (!title) return false;
+
+  const activityText = `${title} ${activity.location} ${activity.notes ?? ''}`.toLowerCase();
+  const blockText = `${item.title} ${item.area} ${item.location} ${item.notes ?? ''}`.toLowerCase();
+
+  const placeholderPattern = /\b(placeholder|insert|need reservation|add queue link|whatever we didn|untitled|new ride|new activity)\b/;
+  if (placeholderPattern.test(activityText)) return false;
+
+  const logisticsPattern = /\b(walk to|head to|bus|uber|skyliner|stroller|bedtime|breakfast|lunch|dinner|airport|arrival|leave for)\b/;
+  const attractionSignalPattern = /\b(ride|rides|attraction|cruise|railway|mountain|mansion|flight|safari|journey|track|runaway|resistance|falcon|tiana|tron|pan|remy|ratatouille|frozen|guardians|everest|avatar|slinky|alien|pirates|aladdin|small world|star tours|fantasmic)\b/;
+
+  if (logisticsPattern.test(activityText) && !attractionSignalPattern.test(activityText)) return false;
+  if (logisticsPattern.test(blockText) && !attractionSignalPattern.test(blockText) && !attractionSignalPattern.test(activityText)) return false;
+
+  return true;
+}
+
+function shouldShowRideIntelForDay(day: TripDay): boolean {
+  if (day.park === 'Travel Day' || day.park === 'Resort Day') return false;
+  return !day.label.toLowerCase().includes('travel');
+}
+
+function useWeatherIntel(date: string): WeatherIntel {
+  const [weather, setWeather] = useState<WeatherIntel>({ status: 'loading' });
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setWeather({ status: 'loading' });
+
+    async function fetchWeather() {
+      try {
+        const response = await fetch(openMeteoUrl, { signal: controller.signal });
+        if (!response.ok) throw new Error(`Weather request failed: ${response.status}`);
+        const data = await response.json();
+        const dayIndex = Array.isArray(data.daily?.time) ? data.daily.time.indexOf(date) : -1;
+        const hourlyTimes: string[] = Array.isArray(data.hourly?.time) ? data.hourly.time : [];
+        const dayHourlyIndexes = hourlyTimes
+          .map((time, index) => (time.startsWith(date) ? index : -1))
+          .filter((index) => index >= 0);
+        const stormChance = dayHourlyIndexes.some((index) => hasStormCode(data.hourly?.weather_code?.[index])) ? 1 : 0;
+
+        setWeather({
+          status: 'ready',
+          currentTemp: typeof data.current?.temperature_2m === 'number' ? Math.round(data.current.temperature_2m) : undefined,
+          highTemp: dayIndex >= 0 && typeof data.daily?.temperature_2m_max?.[dayIndex] === 'number' ? Math.round(data.daily.temperature_2m_max[dayIndex]) : undefined,
+          rainChance: dayIndex >= 0 && typeof data.daily?.precipitation_probability_max?.[dayIndex] === 'number' ? data.daily.precipitation_probability_max[dayIndex] : undefined,
+          stormChance,
+        });
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          console.error('Weather fetch error', error);
+          setWeather({ status: 'error' });
+        }
+      }
+    }
+
+    void fetchWeather();
+    return () => controller.abort();
+  }, [date]);
+
+  return weather;
+}
+
+function getDayIntel(day: TripDay, statuses: Record<string, ItemStatus>) {
+  const reservationCount = day.items.filter(isReservationItem).length;
+  const flexibleItemsById = new Map(day.items.filter((item): item is FlexibleBlock => item.type === 'flexible').map((item) => [item.id, item]));
+  const rideCandidates = (day.landBlocks ?? []).flatMap((landBlock) =>
+    landBlock.activities.map((activity) => ({
+      land: landBlock.land,
+      sourceItemId: activity.sourceItemId,
+      activity,
+      parentItem: flexibleItemsById.get(activity.sourceItemId),
+    })),
+  );
+  const validRideCandidates = shouldShowRideIntelForDay(day)
+    ? rideCandidates.filter((candidate) => candidate.parentItem && isMeaningfulRideActivity(candidate.parentItem, candidate.activity))
+    : [];
+  const completedActivityCount = validRideCandidates.filter(({ sourceItemId, activity }) => statuses[`${sourceItemId}:${activity.id}`] === 'done').length;
+  const timelineItemCount = day.items.length;
+  const hasAnyActivity = timelineItemCount > 0 || reservationCount > 0 || validRideCandidates.length > 0;
+
+  console.log('Today Intel ride count debug', {
+    day: {
+      id: day.id,
+      date: day.date,
+      title: day.label,
+    },
+    candidatesBeforeFiltering: rideCandidates.map(({ land, sourceItemId, activity }) => ({
+      id: activity.id,
+      title: activity.title,
+      land,
+      sourceItemId,
+    })),
+    candidatesAfterFiltering: validRideCandidates.map(({ land, sourceItemId, activity }) => ({
+      id: activity.id,
+      title: activity.title,
+      land,
+      sourceItemId,
+    })),
+    finalRideTotal: validRideCandidates.length,
+  });
+
+  return {
+    reservationCount,
+    activityCount: validRideCandidates.length,
+    completedActivityCount,
+    timelineItemCount,
+    hasAnyActivity,
+  };
+}
+
+function getIntelTitle(day: TripDay, phase: ReturnType<typeof getTripPhase>, countdown?: ReturnType<typeof getDepartureCountdown>): string {
+  if (phase === 'before' && countdown) {
+    if (countdown.days === 0) return 'Departure today';
+    if (countdown.days === 1) return 'Departure tomorrow';
+    return `Departure in ${countdown.days} days`;
+  }
+
+  if (phase === 'after') return 'Trip complete';
+  return day.label;
+}
+
+function TodayIntelCard({
+  day,
+  statuses,
+  phase,
+  countdown,
+}: {
+  day: TripDay;
+  statuses: Record<string, ItemStatus>;
+  phase: ReturnType<typeof getTripPhase>;
+  countdown?: ReturnType<typeof getDepartureCountdown>;
+}) {
+  const weather = useWeatherIntel(day.date);
+  const intel = getDayIntel(day, statuses);
+  const title = getIntelTitle(day, phase, countdown);
+  const reservationText = intel.reservationCount > 0 ? String(intel.reservationCount) : '—';
+  const rideText = intel.activityCount > 0 ? `${intel.completedActivityCount}/${intel.activityCount} done` : '—';
+  const crowdText = formatCrowdLevel(configuredCrowdLevel);
+  const weatherText =
+    weather.status === 'loading'
+      ? 'Loading forecast'
+      : weather.status === 'error'
+        ? 'Forecast unavailable'
+        : [
+            weather.currentTemp !== undefined ? `${weather.currentTemp}° now` : undefined,
+            weather.highTemp !== undefined ? `${weather.highTemp}° high` : undefined,
+            weather.rainChance !== undefined ? `${weather.rainChance}% rain` : undefined,
+            weather.stormChance ? 'storm possible' : undefined,
+          ]
+            .filter(Boolean)
+            .join(' · ') || 'Forecast unavailable';
+
+  return (
+    <section aria-labelledby="today-intel-heading" className="glass-surface rounded-[1.5rem] px-4 py-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[12px] font-black uppercase tracking-[0.16em] text-[#0A84FF]">Today Intel</p>
+          <h2 id="today-intel-heading" className="mt-1 text-[20px] font-black leading-tight text-white">
+            {title}
+          </h2>
+        </div>
+        <LucideIcon name="calendar" size={24} className="shrink-0 text-[#A1A1A6]" />
+      </div>
+      <dl className="mt-4 divide-y divide-[#2C2C2E]/70">
+        {!intel.hasAnyActivity ? (
+          <div className="py-3 text-[15px] font-semibold text-white">No activity for the day</div>
+        ) : null}
+        <div className="grid grid-cols-[auto_1fr] gap-x-3 py-3">
+          <dt className="text-[13px] font-black uppercase tracking-[0.14em] text-[#A1A1A6]">Weather</dt>
+          <dd className="text-right text-[15px] font-semibold text-white">{weatherText}</dd>
+        </div>
+        <div className="grid grid-cols-[auto_1fr] gap-x-3 py-3">
+          <dt className="text-[13px] font-black uppercase tracking-[0.14em] text-[#A1A1A6]">Crowds</dt>
+          <dd className="text-right text-[15px] font-semibold text-white">
+            {crowdText ?? (
+              <a className="text-[#0A84FF] underline decoration-[#0A84FF]/40 underline-offset-4" href={crowdCalendarUrl} target="_blank" rel="noreferrer">
+                External check: Check trusted calendar
+              </a>
+            )}
+          </dd>
+        </div>
+        <div className="grid grid-cols-[auto_1fr] gap-x-3 py-3">
+          <dt className="text-[13px] font-black uppercase tracking-[0.14em] text-[#A1A1A6]">Reservations</dt>
+          <dd className="text-right text-[15px] font-semibold text-white">{reservationText}</dd>
+        </div>
+        <div className="grid grid-cols-[auto_1fr] gap-x-3 py-3">
+          <dt className="text-[13px] font-black uppercase tracking-[0.14em] text-[#A1A1A6]">Rides</dt>
+          <dd className="text-right text-[15px] font-semibold text-white">{rideText}</dd>
+        </div>
+      </dl>
+    </section>
+  );
+}
+
 function TodayScreen({
   day,
   activeItem,
@@ -169,7 +426,6 @@ function TodayScreen({
   days,
   onOpenDay,
   onOpenReservations,
-  onOpenNotes,
 }: ReturnType<typeof getActiveScheduleState> & {
   statuses: Record<string, ItemStatus>;
   onCycleStatus: (id: string) => void;
@@ -181,7 +437,6 @@ function TodayScreen({
   days: TripDay[];
   onOpenDay: (dayId: string) => void;
   onOpenReservations: () => void;
-  onOpenNotes: () => void;
 }) {
   if (phase === 'before') {
     const countdownUnits = [
@@ -194,9 +449,12 @@ function TodayScreen({
     return (
       <main className="screen-fade px-4 pb-8 pt-8 sm:pt-12">
         <section aria-labelledby="countdown-heading" className="section-rise text-center">
-          <h1 id="countdown-heading" className="text-[38px] font-black leading-none tracking-[0.08em] text-white sm:text-[52px]">
-            DISNEY MAYHEM
-          </h1>
+          <h1 id="countdown-heading" className="sr-only">Disney Mayhem</h1>
+          <img
+            src="/DisneyMayhem-WM.svg"
+            alt="Disney Mayhem"
+            className="mx-auto h-auto w-[min(78vw,280px)] sm:w-[320px]"
+          />
           <p className="mt-5 text-[13px] font-black uppercase tracking-[0.18em] text-white">Disney Mayhem begins in...</p>
           <div className="glass-surface mx-auto mt-7 max-w-3xl rounded-[1.75rem] px-5 py-7 sm:px-8 sm:py-9">
             <div className="flex flex-wrap justify-center gap-x-6 gap-y-7" aria-live="polite" aria-label="Live countdown to departure">
@@ -221,6 +479,9 @@ function TodayScreen({
           <h2 id="dashboard-heading" className="text-[13px] font-black uppercase tracking-[0.18em] text-[#A1A1A6]">
             Trip Dashboard
           </h2>
+          <div className="mt-4">
+            <TodayIntelCard day={day} statuses={statuses} phase={phase} countdown={countdown} />
+          </div>
           <div className="mt-4 grid grid-cols-1 gap-3 min-[390px]:grid-cols-2">
             {days.map((tripDay) => {
               const presentation = getDayPresentation(tripDay);
@@ -240,12 +501,6 @@ function TodayScreen({
               icon="utensils"
               onClick={onOpenReservations}
             />
-            <DashboardTile
-              title="Notes"
-              subtitle="Family reminders"
-              icon="notebook"
-              onClick={onOpenNotes}
-            />
           </div>
         </section>
       </main>
@@ -257,7 +512,7 @@ function TodayScreen({
       <>
         <ScreenHeader eyebrow="Trip complete" title="Disney Mayhem">
           <p>
-            The May 29-June 4 trip is complete. Use All Days and Notes as the memory view.
+            The May 29-June 4 trip is complete. Use All Days as the memory view.
           </p>
         </ScreenHeader>
 
@@ -297,6 +552,10 @@ function TodayScreen({
         </div>
       </header>
 
+      <section className="section-rise px-4 pb-8">
+        <TodayIntelCard day={day} statuses={statuses} phase={phase} countdown={countdown} />
+      </section>
+
       <section aria-labelledby="now-heading" className="section-rise px-4">
         <div className="glass-surface rounded-[2.4rem] px-6 py-12 text-center sm:px-10 sm:py-14">
           <p className="text-[13px] font-black uppercase tracking-[0.18em] text-[#BF5AF2]">Now</p>
@@ -324,9 +583,11 @@ function TodayScreen({
             <button
               type="button"
               onClick={() => onEditItem(day.id, nowItem)}
-              className="mt-7 min-h-11 rounded-full bg-[#111111] px-5 py-2 text-[14px] font-black text-white focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]"
+              className="ios-icon-button mt-7"
+              aria-label="Edit"
+              title="Edit"
             >
-              Edit
+              <LucideIcon name="pencil" size={20} />
             </button>
           ) : null}
         </div>
@@ -361,11 +622,11 @@ function TodayScreen({
               <button
                 type="button"
                 onClick={() => onEditItem(day.id, nextItem)}
-                className="ios-quiet-button"
-                aria-label={`Edit ${nextItem.title}`}
+                className="ios-icon-button"
+                aria-label="Edit"
                 title="Edit"
               >
-                Edit
+                <LucideIcon name="pencil" size={20} />
               </button>
             </div>
           </div>
@@ -399,11 +660,11 @@ function TodayScreen({
               <button
                 type="button"
                 onClick={() => onEditItem(day.id, item)}
-                className="ios-quiet-button"
-                aria-label={`Edit ${item.title}`}
+                className="ios-icon-button"
+                aria-label="Edit"
                 title="Edit"
               >
-                Edit
+                <LucideIcon name="pencil" size={20} />
               </button>
             </li>
           ))}
@@ -448,11 +709,11 @@ function CompactItem({
           <button
             type="button"
             onClick={onEdit}
-            className="ios-quiet-button"
-            aria-label={`Edit ${item.title}`}
+            className="ios-icon-button"
+            aria-label="Edit"
             title="Edit"
           >
-            Edit
+            <LucideIcon name="pencil" size={20} />
           </button>
         ) : null}
       </div>
@@ -486,11 +747,11 @@ function AttentionScreen({
               <button
                 type="button"
                 onClick={() => onEditItem(day.id, item)}
-                className="ios-quiet-button"
-                aria-label={`Edit ${item.title}`}
+                className="ios-icon-button"
+                aria-label="Edit"
                 title="Edit"
               >
-                Edit
+                <LucideIcon name="pencil" size={20} />
               </button>
             </div>
             <p className="mt-1 font-semibold text-[#A1A1A6]">{formatTimeRange(item)}</p>
@@ -520,7 +781,6 @@ type EditorState =
 type LandEditorActivity = {
   id: string;
   draft: EditableActivityFields;
-  status: ItemStatus;
   isNew?: boolean;
   removed?: boolean;
 };
@@ -538,6 +798,46 @@ type LightningLanePickerState = {
   duration: number;
 };
 
+type AppRoute = {
+  tab: AppTab;
+  dayId: string | null;
+};
+
+function parseHashRoute(hash = window.location.hash): AppRoute {
+  if (!hash.startsWith('#!')) return { tab: 'today', dayId: null };
+
+  const path = decodeURIComponent(hash.slice(2)).replace(/\/+$/, '') || '/';
+  const segments = path.split('/').filter(Boolean);
+
+  if (segments[0] === 'days') {
+    return { tab: 'days', dayId: segments[1] ?? null };
+  }
+
+  if (segments[0] === 'attention') {
+    return { tab: 'attention', dayId: null };
+  }
+
+  if (segments[0] === 'reservations') {
+    return { tab: 'reservations', dayId: null };
+  }
+
+  return { tab: 'today', dayId: null };
+}
+
+function getRouteHash(tab: AppTab, dayId: string | null = null): string {
+  if (tab === 'days') return dayId ? `#!/days/${encodeURIComponent(dayId)}` : '#!/days';
+  if (tab === 'attention') return '#!/attention';
+  if (tab === 'reservations') return '#!/reservations';
+  return '#!/';
+}
+
+function updateRouteHash(tab: AppTab, dayId: string | null = null) {
+  const nextHash = getRouteHash(tab, dayId);
+  if (window.location.hash !== nextHash) {
+    window.location.hash = nextHash;
+  }
+}
+
 function ItemEditorSheet({
   editor,
   onChange,
@@ -552,6 +852,15 @@ function ItemEditorSheet({
   onDelete: () => void;
 }) {
   const draft = editor.draft;
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') onCancel();
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onCancel]);
 
   return (
     <div className="fixed inset-0 z-40 flex items-end bg-black/70 px-3 py-4 sm:items-center sm:justify-center" role="presentation">
@@ -571,10 +880,11 @@ function ItemEditorSheet({
           <button
             type="button"
             onClick={onCancel}
-            className="ios-quiet-button"
-            aria-label="Close editor"
+            className="ios-icon-button"
+            aria-label="Close"
+            title="Close"
           >
-            Close
+            <LucideIcon name="x" size={20} />
           </button>
         </div>
 
@@ -587,9 +897,22 @@ function ItemEditorSheet({
               className="mt-2 min-h-12 w-full rounded-2xl border border-[#2C2C2E] bg-[#111111] px-4 text-lg font-bold text-white outline-none focus:border-[#0A84FF] focus:ring-4 focus:ring-[#0A84FF]/30"
             >
               <option value="scheduled">Scheduled</option>
+              <option value="reservation">Reservation</option>
               <option value="flexible">Flexible</option>
             </select>
           </label>
+
+          {draft.type === 'reservation' ? (
+            <label className="block">
+              <span className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Date</span>
+              <input
+                type="date"
+                value={draft.date ?? ''}
+                onChange={(event) => onChange({ ...draft, date: event.target.value })}
+                className="mt-2 min-h-12 w-full rounded-2xl border border-[#2C2C2E] bg-[#111111] px-4 text-lg font-bold text-white outline-none focus:border-[#0A84FF] focus:ring-4 focus:ring-[#0A84FF]/30"
+              />
+            </label>
+          ) : null}
 
           <label className="block">
             <span className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Time</span>
@@ -600,6 +923,18 @@ function ItemEditorSheet({
               className="mt-2 min-h-12 w-full rounded-2xl border border-[#2C2C2E] bg-[#111111] px-4 text-lg font-bold text-white outline-none focus:border-[#0A84FF] focus:ring-4 focus:ring-[#0A84FF]/30"
             />
           </label>
+
+          {draft.type === 'reservation' ? (
+            <label className="block">
+              <span className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">End time</span>
+              <input
+                type="time"
+                value={draft.endTime ?? ''}
+                onChange={(event) => onChange({ ...draft, endTime: event.target.value })}
+                className="mt-2 min-h-12 w-full rounded-2xl border border-[#2C2C2E] bg-[#111111] px-4 text-lg font-bold text-white outline-none focus:border-[#0A84FF] focus:ring-4 focus:ring-[#0A84FF]/30"
+              />
+            </label>
+          ) : null}
 
           <label className="block">
             <span className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Title</span>
@@ -618,6 +953,27 @@ function ItemEditorSheet({
               className="mt-2 min-h-12 w-full rounded-2xl border border-[#2C2C2E] bg-[#111111] px-4 text-lg font-bold text-white outline-none focus:border-[#0A84FF] focus:ring-4 focus:ring-[#0A84FF]/30"
             />
           </label>
+
+          {draft.type === 'reservation' ? (
+            <>
+              <label className="block">
+                <span className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Park or area</span>
+                <input
+                  value={draft.area ?? ''}
+                  onChange={(event) => onChange({ ...draft, area: event.target.value })}
+                  className="mt-2 min-h-12 w-full rounded-2xl border border-[#2C2C2E] bg-[#111111] px-4 text-lg font-bold text-white outline-none focus:border-[#0A84FF] focus:ring-4 focus:ring-[#0A84FF]/30"
+                />
+              </label>
+              <label className="block">
+                <span className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Confirmation number</span>
+                <input
+                  value={draft.confirmationNumber ?? ''}
+                  onChange={(event) => onChange({ ...draft, confirmationNumber: event.target.value })}
+                  className="mt-2 min-h-12 w-full rounded-2xl border border-[#2C2C2E] bg-[#111111] px-4 text-lg font-bold text-white outline-none focus:border-[#0A84FF] focus:ring-4 focus:ring-[#0A84FF]/30"
+                />
+              </label>
+            </>
+          ) : null}
 
           <label className="block">
             <span className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Notes</span>
@@ -676,17 +1032,24 @@ function LandEditorSheet({
 }) {
   const [lightningLanePicker, setLightningLanePicker] = useState<LightningLanePickerState | null>(null);
 
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key !== 'Escape') return;
+      if (lightningLanePicker) {
+        setLightningLanePicker(null);
+        return;
+      }
+      onCancel();
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [lightningLanePicker, onCancel]);
+
   function updateActivity(id: string, draft: EditableActivityFields) {
     onChange({
       ...editor,
       activities: editor.activities.map((activity) => (activity.id === id ? { ...activity, draft } : activity)),
-    });
-  }
-
-  function updateStatus(id: string, status: ItemStatus) {
-    onChange({
-      ...editor,
-      activities: editor.activities.map((activity) => (activity.id === id ? { ...activity, status } : activity)),
     });
   }
 
@@ -699,7 +1062,6 @@ function LandEditorSheet({
         {
           id,
           isNew: true,
-          status: 'todo',
           draft: {
             title: '',
             location: editor.land,
@@ -797,25 +1159,25 @@ function LandEditorSheet({
               {editor.land}
             </h2>
           </div>
-          <button type="button" onClick={onCancel} className="ios-quiet-button" aria-label="Close land editor">
-            Close
+          <button type="button" onClick={onCancel} className="ios-icon-button" aria-label="Close" title="Close">
+            <LucideIcon name="x" size={20} />
           </button>
         </div>
 
         <div className="mt-5 space-y-5">
           {visibleActivities.map((activity, index) => (
             <section key={activity.id} className="glass-surface rounded-[1.35rem] p-4">
-              <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center justify-between gap-3">
                 <p className="text-[12px] font-black uppercase tracking-[0.16em] text-[#A1A1A6]">Ride {index + 1}</p>
-                <div className="flex gap-2">
-                  <button type="button" onClick={() => moveActivity(activity.id, -1)} className="ios-quiet-button" aria-label={`Move ${activity.draft.title || 'ride'} up`}>
-                    Up
+                <div className="flex shrink-0 gap-2">
+                  <button type="button" onClick={() => moveActivity(activity.id, -1)} className="ios-icon-button" aria-label="Move up" title="Move up">
+                    <LucideIcon name="chevron-up" size={20} />
                   </button>
-                  <button type="button" onClick={() => moveActivity(activity.id, 1)} className="ios-quiet-button" aria-label={`Move ${activity.draft.title || 'ride'} down`}>
-                    Down
+                  <button type="button" onClick={() => moveActivity(activity.id, 1)} className="ios-icon-button" aria-label="Move down" title="Move down">
+                    <LucideIcon name="chevron-down" size={20} />
                   </button>
-                  <button type="button" onClick={() => removeActivity(activity.id)} className="ios-quiet-button text-[#FF453A]" aria-label={`Remove ${activity.draft.title || 'ride'}`}>
-                    Remove
+                  <button type="button" onClick={() => removeActivity(activity.id)} className="ios-icon-button ios-icon-button-danger" aria-label="Remove item" title="Remove item">
+                    <LucideIcon name="trash" size={20} />
                   </button>
                 </div>
               </div>
@@ -829,14 +1191,6 @@ function LandEditorSheet({
                     className={inputClass}
                     required
                   />
-                </label>
-                <label className="block">
-                  <span className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Status</span>
-                  <select value={activity.status} onChange={(event) => updateStatus(activity.id, event.target.value as ItemStatus)} className={inputClass}>
-                    <option value="todo">To do</option>
-                    <option value="done">Done</option>
-                    <option value="skipped">Skipped</option>
-                  </select>
                 </label>
                 <div>
                   <p className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Lightning Lane Window</p>
@@ -983,11 +1337,11 @@ function FlexibleTimelineItem({
           <button
             type="button"
             onClick={() => onEditItem(day.id, item)}
-            className="ios-quiet-button"
-            aria-label={`Edit ${item.title}`}
+            className="ios-icon-button"
+            aria-label="Edit"
             title="Edit"
           >
-            Edit
+            <LucideIcon name="pencil" size={20} />
           </button>
           <StatusButton id={item.id} status={itemStatus} onCycle={onCycleStatus} />
         </div>
@@ -1003,11 +1357,11 @@ function FlexibleTimelineItem({
               <button
                 type="button"
                 onClick={() => onEditLand(day, item, group.land, group.activities)}
-                className="ios-quiet-button"
-                aria-label={`Edit ${group.land}`}
+                className="ios-icon-button"
+                aria-label="Edit"
                 title={`Edit ${group.land}`}
               >
-                <LucideIcon name="pencil" size={16} className="text-[#A1A1A6]" />
+                <LucideIcon name="pencil" size={20} />
               </button>
             </div>
             <ul className="mt-3 divide-y divide-[#2C2C2E]/70">
@@ -1068,15 +1422,17 @@ function DayTimeline({
             </h2>
             <p className="mt-1 text-[15px] font-semibold text-[#A1A1A6]">{day.park}</p>
           </div>
+          <button
+            type="button"
+            onClick={() => onAddItem(day.id)}
+            className="ios-icon-button"
+            aria-label="Add item"
+            title="Add item"
+          >
+            <LucideIcon name="plus" size={20} />
+          </button>
         </div>
       </div>
-      <button
-        type="button"
-        onClick={() => onAddItem(day.id)}
-        className="mb-5 min-h-11 rounded-full bg-[#0A84FF] px-4 py-2 text-sm font-black text-black transition hover:bg-[#409CFF] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]"
-      >
-        Add item
-      </button>
       <div className="divide-y divide-[#2C2C2E]/70">
         {day.items.map((item) =>
           item.type === 'flexible' ? (
@@ -1129,79 +1485,103 @@ function AllDaysScreen({
 }
 
 function ReservationsScreen({
-  statuses,
   reservations,
   onEditItem,
+  onAddReservation,
+  onDeleteItem,
 }: {
-  statuses: Record<string, ItemStatus>;
   reservations: ReturnType<typeof getReservations>;
   onEditItem: (dayId: string, item: TripItem) => void;
+  onAddReservation: () => void;
+  onDeleteItem: (itemId: string) => void;
 }) {
-  return (
-    <>
-      <ScreenHeader eyebrow="Fixed plans" title="Reservations" />
-      <main className="screen-fade px-4 pb-6">
-        <div className="divide-y divide-[#2C2C2E]/70">
-        {reservations.map(({ day, item }) => (
-          <article key={item.id} className="py-4">
-            <p className="text-sm font-black uppercase tracking-wide text-[#0A84FF]">{formatDateLabel(day.date)}</p>
-            <div className="mt-1 flex items-start justify-between gap-3">
-              <h2 className="text-xl font-black text-white">{item.title}</h2>
-              <button
-                type="button"
-                onClick={() => onEditItem(day.id, item)}
-                className="ios-quiet-button"
-                aria-label={`Edit ${item.title}`}
-                title="Edit"
-              >
-                Edit
-              </button>
-            </div>
-            <p className="mt-1 font-semibold text-[#A1A1A6]">{formatTimeRange(item)}</p>
-            <p className="mt-1 text-sm text-[#A1A1A6]">{item.location}</p>
-          </article>
-        ))}
-        </div>
-      </main>
-    </>
-  );
-}
+  const reservationGroups = groupReservationsByDay(reservations);
 
-function NotesScreen({
-  notes,
-  setNote,
-  days,
-}: {
-  notes: Record<string, string>;
-  setNote: (id: string, note: string) => void;
-  days: TripDay[];
-}) {
   return (
-    <>
-      <ScreenHeader eyebrow="Family notes" title="Notes">
-        Saved on this device for quick reminders.
-      </ScreenHeader>
-      <main className="screen-fade space-y-4 px-4 pb-6">
-        {days.map((day) => (
-          <label key={day.id} className="glass-surface block rounded-[1.6rem] p-4">
-            <span className="block text-lg font-black text-white">{day.label}</span>
-            <span className="mt-1 block text-sm text-[#A1A1A6]">{formatDateLabel(day.date)}</span>
-            <textarea
-              value={notes[day.id] ?? ''}
-              onChange={(event) => setNote(day.id, event.target.value)}
-              className="mt-3 min-h-28 w-full rounded-3xl border border-[#2C2C2E] bg-[#111111] px-4 py-3 text-base text-white outline-none focus:border-[#0A84FF] focus:ring-4 focus:ring-[#0A84FF]/30"
-              placeholder="Add reminders, mobile order ideas, kid notes, or backup plans."
-            />
-          </label>
+    <main className="screen-fade px-4 pb-6 pt-8">
+      <section className="glass-surface rounded-[1.5rem] px-4 py-4" aria-labelledby="reservations-heading">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-[12px] font-black uppercase tracking-[0.16em] text-[#0A84FF]">Fixed plans</p>
+            <h1 id="reservations-heading" className="mt-2 text-[28px] font-black leading-tight text-white">
+              Reservations
+            </h1>
+          </div>
+          <button
+            type="button"
+            onClick={onAddReservation}
+            className="ios-icon-button"
+            aria-label="Add reservation"
+            title="Add reservation"
+          >
+            <LucideIcon name="plus" size={20} />
+          </button>
+        </div>
+      </section>
+
+      <div className="mt-7 space-y-8">
+        {reservationGroups.map(({ day, items }) => (
+          <section
+            key={day.id}
+            aria-labelledby={`${day.id}-reservations-heading`}
+            className="glass-surface rounded-[1.5rem] px-4 py-4"
+          >
+            <div className="pb-4">
+              <p className="text-[12px] font-black uppercase tracking-[0.16em] text-[#0A84FF]">{formatDateLabel(day.date)}</p>
+              <h2 id={`${day.id}-reservations-heading`} className="mt-1 text-[20px] font-black leading-tight text-white">
+                {day.label}
+              </h2>
+              <p className="mt-1 text-sm font-semibold text-[#A1A1A6]">{day.park}</p>
+            </div>
+            <div className="divide-y divide-[#2C2C2E]/70">
+              {items.map((item) => (
+                <article key={item.id} className="py-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-[12px] font-black uppercase tracking-[0.16em] text-[#A1A1A6]">{formatTimeRange(item)}</p>
+                      <h3 className="mt-2 text-xl font-black leading-tight text-white">{item.title}</h3>
+                      <p className="mt-1 text-sm font-semibold text-[#A1A1A6]">{item.location}</p>
+                      {getItemConfirmationNumber(item) ? (
+                        <p className="mt-2 text-sm text-[#A1A1A6]">Confirmation: {getItemConfirmationNumber(item)}</p>
+                      ) : null}
+                      {item.notes ? <p className="mt-2 text-sm leading-6 text-[#A1A1A6]">{item.notes}</p> : null}
+                    </div>
+                    <div className="flex shrink-0 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => onEditItem(day.id, item)}
+                        className="ios-icon-button"
+                        aria-label="Edit"
+                        title="Edit"
+                      >
+                        <LucideIcon name="pencil" size={20} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onDeleteItem(item.id)}
+                        className="ios-icon-button ios-icon-button-danger"
+                        aria-label="Delete reservation"
+                        title="Delete reservation"
+                      >
+                        <LucideIcon name="trash" size={20} />
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
         ))}
-      </main>
-    </>
+        {reservationGroups.length === 0 ? <p className="text-[15px] text-[#A1A1A6]">No reservations yet.</p> : null}
+      </div>
+    </main>
   );
 }
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<AppTab>('today');
-  const [selectedDayId, setSelectedDayId] = useState<string | null>(null);
+  const initialRoute = useMemo(() => parseHashRoute(), []);
+  const [activeTab, setActiveTab] = useState<AppTab>(initialRoute.tab);
+  const [selectedDayId, setSelectedDayId] = useState<string | null>(initialRoute.dayId);
   const [now, setNow] = useState(() => new Date());
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [landEditor, setLandEditor] = useState<LandEditorState | null>(null);
@@ -1210,6 +1590,17 @@ export default function App() {
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 1_000);
     return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    function handleHashChange() {
+      const route = parseHashRoute();
+      setActiveTab(route.tab);
+      setSelectedDayId(route.dayId);
+    }
+
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
   const tripDays = useMemo(
@@ -1234,31 +1625,36 @@ export default function App() {
   const timelineDays = selectedTimelineDay ? [selectedTimelineDay] : tripDays;
 
   function openTab(tab: AppTab) {
-    if (tab === 'days') setSelectedDayId(null);
+    setSelectedDayId(null);
     setActiveTab(tab);
+    updateRouteHash(tab);
   }
 
   function openDashboard() {
     setSelectedDayId(null);
     setActiveTab('today');
+    updateRouteHash('today');
   }
 
   function openDashboardDay(dayId: string) {
     setSelectedDayId(dayId);
     setActiveTab('days');
+    updateRouteHash('days', dayId);
   }
 
-  function openDashboardTab(tab: Extract<AppTab, 'reservations' | 'notes'>) {
+  function openDashboardTab(tab: Extract<AppTab, 'reservations'>) {
     setSelectedDayId(null);
     setActiveTab(tab);
+    updateRouteHash(tab);
   }
 
   function openEditItem(dayId: string, item: TripItem) {
+    const day = tripDays.find((tripDay) => tripDay.id === dayId);
     setEditor({
       mode: 'edit',
       dayId,
       item,
-      draft: toEditableFields(item),
+      draft: toEditableFields(item, day?.date ?? dayId),
     });
   }
 
@@ -1267,11 +1663,32 @@ export default function App() {
       mode: 'add',
       dayId,
       draft: {
+        date: dayId,
         time: '',
+        endTime: '',
         title: '',
         location: '',
         notes: '',
         type: 'scheduled',
+      },
+    });
+  }
+
+  function openAddReservation() {
+    const dayId = activeState.day.id;
+    setEditor({
+      mode: 'add',
+      dayId,
+      draft: {
+        date: activeState.day.date,
+        time: '',
+        endTime: '',
+        title: '',
+        location: '',
+        area: activeState.day.location,
+        confirmationNumber: '',
+        notes: '',
+        type: 'reservation',
       },
     });
   }
@@ -1283,7 +1700,6 @@ export default function App() {
       land,
       activities: activities.map((activity) => ({
         id: activity.id,
-        status: tripStorage.statuses[getActivityStatusKey(item, activity)] ?? 'todo',
         draft: {
           ...toEditableActivityFields(activity),
           displayOrder: item.activities.findIndex((candidate) => candidate.id === activity.id),
@@ -1299,7 +1715,9 @@ export default function App() {
       tripStorage.saveItemEdit(editor.item.id, editor.draft);
     } else {
       const id = `local-${editor.dayId}-${Date.now()}`;
-      tripStorage.addItem(editor.dayId, createItemFromFields(id, editor.draft));
+      const item = createItemFromFields(id, editor.draft);
+      const targetDayId = item.type === 'reservation' && item.date ? item.date : editor.dayId;
+      tripStorage.addItem(targetDayId, item);
     }
 
     setEditor(null);
@@ -1357,11 +1775,6 @@ export default function App() {
       } else {
         tripStorage.saveActivityEdit(landEditor.dayId, landEditor.parentItem.id, activity.id, draft);
       }
-
-      const statusKey = `${landEditor.parentItem.id}:${activity.id}`;
-      if ((tripStorage.statuses[statusKey] ?? 'todo') !== activity.status) {
-        tripStorage.setStatus(statusKey, activity.status);
-      }
     });
 
     setLandEditor(null);
@@ -1403,7 +1816,6 @@ export default function App() {
             days={tripDays}
             onOpenDay={openDashboardDay}
             onOpenReservations={() => openDashboardTab('reservations')}
-            onOpenNotes={() => openDashboardTab('notes')}
           />
         ) : null}
         {activeTab === 'days' ? (
@@ -1418,9 +1830,8 @@ export default function App() {
         ) : null}
         {activeTab === 'attention' ? <AttentionScreen statuses={tripStorage.statuses} attentionItems={attentionItems} onEditItem={openEditItem} /> : null}
         {activeTab === 'reservations' ? (
-          <ReservationsScreen statuses={tripStorage.statuses} reservations={reservations} onEditItem={openEditItem} />
+          <ReservationsScreen reservations={reservations} onEditItem={openEditItem} onAddReservation={openAddReservation} onDeleteItem={tripStorage.deleteItem} />
         ) : null}
-        {activeTab === 'notes' ? <NotesScreen notes={tripStorage.notes} setNote={tripStorage.setNote} days={tripDays} /> : null}
       </div>
       {phase === 'before' ? null : <Tabs activeTab={activeTab} onChange={openTab} />}
       {editor ? (

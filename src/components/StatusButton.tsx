@@ -1,4 +1,5 @@
 import type { ItemStatus } from '../types';
+import { LucideIcon } from './LucideIcon';
 
 type StatusButtonProps = {
   id: string;
@@ -13,20 +14,22 @@ const statusLabel: Record<ItemStatus | 'todo', string> = {
 };
 
 export function StatusButton({ id, status = 'todo', onCycle }: StatusButtonProps) {
+  const isDone = status === 'done';
+
   return (
     <button
       type="button"
       onClick={() => onCycle(id)}
-      className={`min-h-11 rounded-full border px-4 py-2 text-sm font-bold transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF] ${
-        status === 'done'
+      className={`inline-flex min-h-11 min-w-11 items-center justify-center rounded-full border transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF] ${
+        isDone
           ? 'border-[#30D158] bg-[#30D158] text-black'
-          : status === 'skipped'
-            ? 'border-[#FF9F0A] bg-[#FF9F0A] text-black'
-            : 'border-[#3A3A3C] bg-[#1C1C1E] text-white hover:bg-[#2C2C2E]'
+          : 'border-white/10 bg-[#1C1C1E]/80 text-[#A1A1A6] hover:border-white/15 hover:bg-[#2C2C2E]'
       }`}
-      aria-label={`Mark ${id} status. Current status is ${statusLabel[status]}.`}
+      aria-label={`${isDone ? 'Mark to do' : 'Mark done'}. Current status is ${statusLabel[status]}.`}
+      title={isDone ? 'Done' : 'To do'}
+      aria-pressed={isDone}
     >
-      {statusLabel[status]}
+      <LucideIcon name="check" size={20} />
     </button>
   );
 }

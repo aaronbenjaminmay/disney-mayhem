@@ -1,6 +1,21 @@
 import type React from 'react';
 
-export type LucideIconName = 'calendar' | 'chevron-left' | 'clapperboard' | 'castle' | 'globe' | 'leaf' | 'notebook' | 'pencil' | 'plane' | 'utensils';
+export type LucideIconName =
+  | 'calendar'
+  | 'check'
+  | 'chevron-left'
+  | 'chevron-down'
+  | 'chevron-up'
+  | 'clapperboard'
+  | 'castle'
+  | 'globe'
+  | 'leaf'
+  | 'pencil'
+  | 'plane'
+  | 'plus'
+  | 'trash'
+  | 'utensils'
+  | 'x';
 
 type LucideIconProps = {
   name: LucideIconName;
@@ -17,9 +32,24 @@ const paths: Record<LucideIconName, React.ReactNode> = {
       <path d="M3 10h18" />
     </>
   ),
+  check: (
+    <>
+      <path d="m20 6-11 11-5-5" />
+    </>
+  ),
   'chevron-left': (
     <>
       <path d="m15 18-6-6 6-6" />
+    </>
+  ),
+  'chevron-down': (
+    <>
+      <path d="m6 9 6 6 6-6" />
+    </>
+  ),
+  'chevron-up': (
+    <>
+      <path d="m18 15-6-6-6 6" />
     </>
   ),
   castle: (
@@ -56,16 +86,6 @@ const paths: Record<LucideIconName, React.ReactNode> = {
       <path d="M4 13c4 0 8-2 12-6" />
     </>
   ),
-  notebook: (
-    <>
-      <path d="M2 6h4" />
-      <path d="M2 10h4" />
-      <path d="M2 14h4" />
-      <path d="M2 18h4" />
-      <rect width="16" height="20" x="4" y="2" rx="2" />
-      <path d="M9.5 14.5 15 9l2 2-5.5 5.5H9.5v-2Z" />
-    </>
-  ),
   pencil: (
     <>
       <path d="M21.2 6.8 17.2 2.8a2 2 0 0 0-2.8 0L3 14.2V21h6.8L21.2 9.6a2 2 0 0 0 0-2.8Z" />
@@ -77,12 +97,33 @@ const paths: Record<LucideIconName, React.ReactNode> = {
       <path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 20.5 3s-3 .5-4.5 2L12.5 8.5 4.3 6.7c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3l5.5 3.7-2.1 2.1-3.4-.8-.8.8 4 2 2 4 .8-.8-.8-3.4 2.1-2.1 3.7 5.5c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2Z" />
     </>
   ),
+  plus: (
+    <>
+      <path d="M12 5v14" />
+      <path d="M5 12h14" />
+    </>
+  ),
+  trash: (
+    <>
+      <path d="M3 6h18" />
+      <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+      <path d="M10 11v6" />
+      <path d="M14 11v6" />
+    </>
+  ),
   utensils: (
     <>
       <path d="M3 2v7c0 1.7 1.3 3 3 3s3-1.3 3-3V2" />
       <path d="M5 2v20" />
       <path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Z" />
       <path d="M21 15v7" />
+    </>
+  ),
+  x: (
+    <>
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
     </>
   ),
 };

@@ -1,5 +1,6 @@
 import type { ItemStatus, TripItem } from '../types';
 import { findNextActivity, formatTimeRange, getActivityStatusKey, getItemStatusKey } from '../utils/time';
+import { LucideIcon } from './LucideIcon';
 import { StatusButton } from './StatusButton';
 
 type ItemCardProps = {
@@ -17,11 +18,11 @@ function EditButton({ item, onEdit }: { item: TripItem; onEdit?: (item: TripItem
     <button
       type="button"
       onClick={() => onEdit(item)}
-      className="ios-quiet-button"
-      aria-label={`Edit ${item.title}`}
+      className="ios-icon-button"
+      aria-label="Edit"
       title="Edit"
     >
-      Edit
+      <LucideIcon name="pencil" size={20} />
     </button>
   );
 }

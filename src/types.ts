@@ -48,6 +48,21 @@ export type ScheduledItem = {
   needsAttention?: boolean;
 };
 
+export type ReservationItem = {
+  id: string;
+  type: 'reservation';
+  date: string;
+  time: string;
+  endTime?: string;
+  title: string;
+  location: string;
+  area?: string;
+  confirmationNumber?: string;
+  notes?: string;
+  category: 'reservation';
+  needsAttention?: boolean;
+};
+
 export type FlexibleBlock = {
   id: string;
   type: 'flexible';
@@ -61,7 +76,7 @@ export type FlexibleBlock = {
   needsAttention?: boolean;
 };
 
-export type TripItem = ScheduledItem | FlexibleBlock;
+export type TripItem = ScheduledItem | ReservationItem | FlexibleBlock;
 
 export type LandBlockActivity = Activity & {
   sourceItemId: string;
@@ -97,7 +112,6 @@ export type TripDay = {
 
 export type PersistedState = {
   statuses: Record<string, ItemStatus>;
-  notes: Record<string, string>;
   itemEdits: Record<string, EditableItemFields>;
   addedItems: Record<string, TripItem[]>;
   deletedItemIds: string[];
@@ -107,9 +121,13 @@ export type PersistedState = {
 };
 
 export type EditableItemFields = {
+  date?: string;
   time?: string;
+  endTime?: string;
   title: string;
   location: string;
+  area?: string;
+  confirmationNumber?: string;
   notes?: string;
   type: TripItem['type'];
 };

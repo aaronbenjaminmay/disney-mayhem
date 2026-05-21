@@ -1,4 +1,4 @@
-export type AppTab = 'today' | 'days' | 'attention' | 'reservations' | 'notes';
+export type AppTab = 'today' | 'days' | 'attention' | 'reservations';
 
 type TabsProps = {
   activeTab: AppTab;
@@ -10,7 +10,6 @@ const tabs: { id: AppTab; label: string }[] = [
   { id: 'days', label: 'All Days' },
   { id: 'attention', label: 'Attention' },
   { id: 'reservations', label: 'Reservations' },
-  { id: 'notes', label: 'Notes' },
 ];
 
 export function Tabs({ activeTab, onChange }: TabsProps) {

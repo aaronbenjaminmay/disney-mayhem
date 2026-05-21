@@ -5,6 +5,9 @@ import {
   saveSupabaseActivityAdd,
   saveSupabaseActivityDelete,
   saveSupabaseActivityEdit,
+  saveSupabaseItemAdd,
+  saveSupabaseItemDelete,
+  saveSupabaseItemEdit,
   saveSupabaseStatus,
   type SupabaseStatusEdits,
 } from '../lib/tripEditsSync';
@@ -12,7 +15,6 @@ import {
 const storageKey = 'disney-mayhem-state-v1';
 const defaultState: PersistedState = {
   statuses: {},
-  notes: {},
   itemEdits: {},
   addedItems: {},
   deletedItemIds: [],
@@ -29,7 +31,6 @@ function loadState(): PersistedState {
     const parsed = JSON.parse(stored) as Partial<PersistedState>;
     return {
       statuses: parsed.statuses ?? {},
-      notes: parsed.notes ?? {},
       itemEdits: parsed.itemEdits ?? {},
       addedItems: parsed.addedItems ?? {},
       deletedItemIds: parsed.deletedItemIds ?? [],
@@ -81,8 +82,20 @@ export function useTripStorage() {
         const nextActivityEdits = { ...current.activityEdits, ...edits.activityEdits };
         const nextAddedActivities = mergeAddedActivities(current.addedActivities, edits.addedActivities);
         const nextDeletedActivityIds = [...new Set([...current.deletedActivityIds, ...edits.deletedActivityIds])];
+        const nextItemEdits = { ...current.itemEdits, ...edits.itemEdits };
+        const nextAddedItems = { ...current.addedItems };
+        Object.entries(edits.addedItems).forEach(([dayId, items]) => {
+          const existing = nextAddedItems[dayId] ?? [];
+          const byId = new Map(existing.map((item) => [item.id, item]));
+          items.forEach((item) => byId.set(item.id, item));
+          nextAddedItems[dayId] = [...byId.values()];
+        });
+        const nextDeletedItemIds = [...new Set([...current.deletedItemIds, ...edits.deletedItemIds])];
         if (
           statusesAreEqual(current.statuses, nextStatuses) &&
+          JSON.stringify(current.itemEdits) === JSON.stringify(nextItemEdits) &&
+          JSON.stringify(current.addedItems) === JSON.stringify(nextAddedItems) &&
+          current.deletedItemIds.length === nextDeletedItemIds.length &&
           JSON.stringify(current.activityEdits) === JSON.stringify(nextActivityEdits) &&
           JSON.stringify(current.addedActivities) === JSON.stringify(nextAddedActivities) &&
           current.deletedActivityIds.length === nextDeletedActivityIds.length
@@ -93,6 +106,9 @@ export function useTripStorage() {
         return {
           ...current,
           statuses: nextStatuses,
+          itemEdits: nextItemEdits,
+          addedItems: nextAddedItems,
+          deletedItemIds: nextDeletedItemIds,
           activityEdits: nextActivityEdits,
           addedActivities: nextAddedActivities,
           deletedActivityIds: nextDeletedActivityIds,
@@ -137,7 +153,6 @@ export function useTripStorage() {
   return useMemo(
     () => ({
       statuses: state.statuses,
-      notes: state.notes,
       itemEdits: state.itemEdits,
       addedItems: state.addedItems,
       deletedItemIds: state.deletedItemIds,
@@ -156,14 +171,8 @@ export function useTripStorage() {
       },
       cycleStatus(id: string) {
         setState((current) => {
-          const nextStatus: Record<ItemStatus | 'unset', ItemStatus> = {
-            unset: 'done',
-            todo: 'done',
-            done: 'skipped',
-            skipped: 'todo',
-          };
-          const currentStatus = current.statuses[id] ?? 'unset';
-          const next = nextStatus[currentStatus];
+          const currentStatus = current.statuses[id] ?? 'todo';
+          const next: ItemStatus = currentStatus === 'done' ? 'todo' : 'done';
 
           void saveSupabaseStatus(id, next);
 
@@ -176,15 +185,6 @@ export function useTripStorage() {
           };
         });
       },
-      setNote(id: string, note: string) {
-        setState((current) => ({
-          ...current,
-          notes: {
-            ...current.notes,
-            [id]: note,
-          },
-        }));
-      },
       saveItemEdit(id: string, fields: EditableItemFields) {
         setState((current) => ({
           ...current,
@@ -193,6 +193,7 @@ export function useTripStorage() {
             [id]: fields,
           },
         }));
+        void saveSupabaseItemEdit(id, fields);
       },
       addItem(dayId: string, item: TripItem) {
         setState((current) => ({
@@ -202,12 +203,14 @@ export function useTripStorage() {
             [dayId]: [...(current.addedItems[dayId] ?? []), item],
           },
         }));
+        void saveSupabaseItemAdd(dayId, item);
       },
       deleteItem(id: string) {
         setState((current) => ({
           ...current,
           deletedItemIds: current.deletedItemIds.includes(id) ? current.deletedItemIds : [...current.deletedItemIds, id],
         }));
+        void saveSupabaseItemDelete(id);
       },
       saveActivityEdit(dayId: string, parentItemId: string, activityId: string, fields: EditableActivityFields) {
         setState((current) => ({

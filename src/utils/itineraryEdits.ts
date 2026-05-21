@@ -1,13 +1,22 @@
-import type { Activity, EditableActivityFields, EditableItemFields, FlexibleBlock, ScheduledItem, TripDay, TripItem } from '../types';
+import type { Activity, EditableActivityFields, EditableItemFields, FlexibleBlock, ReservationItem, ScheduledItem, TripDay, TripItem } from '../types';
 import { withTripDayGroups } from './landBlocks';
+import { getItemStart } from './time';
 
-export function toEditableFields(item: TripItem): EditableItemFields {
+export function isReservationItem(item: TripItem): item is ReservationItem | ScheduledItem {
+  return item.type === 'reservation' || (item.type === 'scheduled' && item.category === 'reservation');
+}
+
+export function toEditableFields(item: TripItem, dayDate?: string): EditableItemFields {
   return {
+    date: item.type === 'reservation' ? item.date : dayDate,
     time: item.time ?? '',
+    endTime: item.endTime ?? '',
     title: item.title,
     location: item.location,
+    area: item.type === 'reservation' ? item.area ?? '' : '',
+    confirmationNumber: item.type === 'reservation' ? item.confirmationNumber ?? '' : '',
     notes: item.notes ?? '',
-    type: item.type,
+    type: isReservationItem(item) ? 'reservation' : item.type,
   };
 }
 
@@ -15,11 +24,25 @@ export function createItemFromFields(id: string, fields: EditableItemFields): Tr
   const time = fields.time?.trim();
   const base = {
     id,
+    date: fields.date,
     time: time || undefined,
+    endTime: fields.endTime?.trim() || undefined,
     title: fields.title.trim() || 'New item',
     location: fields.location.trim(),
+    area: fields.area?.trim() || undefined,
+    confirmationNumber: fields.confirmationNumber?.trim() || undefined,
     notes: fields.notes?.trim() || undefined,
   };
+
+  if (fields.type === 'reservation') {
+    return {
+      ...base,
+      type: 'reservation',
+      date: fields.date || '',
+      time: time || '09:00',
+      category: 'reservation',
+    } satisfies ReservationItem;
+  }
 
   if (fields.type === 'flexible') {
     return {
@@ -60,7 +83,25 @@ function applyEdit(item: TripItem, fields?: EditableItemFields): TripItem {
     } satisfies ScheduledItem;
   }
 
+  if (updated.type === 'reservation') {
+    return {
+      ...updated,
+      date: updated.date || fields.date || '',
+      category: 'reservation',
+    } satisfies ReservationItem;
+  }
+
   return updated;
+}
+
+function getItemTargetDayId(item: TripItem, sourceDayId: string, fields?: EditableItemFields): string {
+  if (fields?.date) return fields.date;
+  if (item.type === 'reservation' && item.date) return item.date;
+  return sourceDayId;
+}
+
+function sortItemsByTime(items: TripItem[]): TripItem[] {
+  return [...items].sort((left, right) => getItemStart(left) - getItemStart(right));
 }
 
 export function toEditableActivityFields(activity: Activity): EditableActivityFields {
@@ -143,12 +184,34 @@ export function mergeTripEdits(
 ): TripDay[] {
   const deleted = new Set(deletedItemIds);
   const deletedActivities = new Set(deletedActivityIds);
+  const itemsByDay = new Map<string, TripItem[]>();
+
+  baseDays.forEach((day) => itemsByDay.set(day.id, []));
+
+  baseDays.forEach((day) => {
+    day.items
+      .filter((item) => !deleted.has(item.id))
+      .forEach((item) => {
+        const fields = itemEdits[item.id];
+        const updated = applyEdit(item, fields);
+        const targetDayId = getItemTargetDayId(updated, day.id, fields);
+        itemsByDay.set(targetDayId, [...(itemsByDay.get(targetDayId) ?? []), updated]);
+      });
+  });
+
+  Object.entries(addedItems).forEach(([sourceDayId, items]) => {
+    items
+      .filter((item) => !deleted.has(item.id))
+      .forEach((item) => {
+        const fields = itemEdits[item.id];
+        const updated = applyEdit(item, fields);
+        const targetDayId = getItemTargetDayId(updated, sourceDayId, fields);
+        itemsByDay.set(targetDayId, [...(itemsByDay.get(targetDayId) ?? []), updated]);
+      });
+  });
 
   return baseDays.map((day) => {
-    const items = [
-      ...day.items.filter((item) => !deleted.has(item.id)).map((item) => applyEdit(item, itemEdits[item.id])),
-      ...(addedItems[day.id] ?? []).filter((item) => !deleted.has(item.id)).map((item) => applyEdit(item, itemEdits[item.id])),
-    ].map((item) => applyActivityEdits(item, activityEdits, addedActivities, deletedActivities));
+    const items = sortItemsByTime(itemsByDay.get(day.id) ?? []).map((item) => applyActivityEdits(item, activityEdits, addedActivities, deletedActivities));
 
     return withTripDayGroups({
       ...day,
@@ -160,9 +223,12 @@ export function mergeTripEdits(
 export function getReservations(days: TripDay[]) {
   return days.flatMap((day) =>
     day.items
-      .filter((item): item is ScheduledItem => item.type === 'scheduled' && item.category === 'reservation')
+      .filter(isReservationItem)
       .map((item) => ({ day, item })),
-  );
+  ).sort((left, right) => {
+    const dateCompare = left.day.date.localeCompare(right.day.date);
+    return dateCompare || getItemStart(left.item) - getItemStart(right.item);
+  });
 }
 
 export function getAttentionItems(days: TripDay[]) {
