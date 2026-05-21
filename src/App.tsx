@@ -48,6 +48,33 @@ function getDayPresentation(day: TripDay) {
   return { title: `${day.label} ✨`, symbol: '✨' };
 }
 
+function DashboardTile({
+  title,
+  subtitle,
+  icon,
+  onClick,
+}: {
+  title: string;
+  subtitle: string;
+  icon: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="min-h-28 rounded-[1.35rem] bg-[#1C1C1E] px-4 py-4 text-left transition hover:bg-[#2C2C2E] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]"
+      aria-label={`${title}. ${subtitle}`}
+    >
+      <span className="block text-2xl" aria-hidden="true">
+        {icon}
+      </span>
+      <span className="mt-3 block text-[17px] font-black leading-tight text-white">{title}</span>
+      <span className="mt-1 block text-[13px] font-semibold leading-snug text-[#A1A1A6]">{subtitle}</span>
+    </button>
+  );
+}
+
 function TodayScreen({
   day,
   activeItem,
@@ -62,6 +89,10 @@ function TodayScreen({
   attentionItems,
   phase,
   countdown,
+  days,
+  onOpenDay,
+  onOpenReservations,
+  onOpenNotes,
 }: ReturnType<typeof getActiveScheduleState> & {
   statuses: Record<string, ItemStatus>;
   onCycleStatus: (id: string) => void;
@@ -70,6 +101,10 @@ function TodayScreen({
   attentionItems: ReturnType<typeof getAttentionItems>;
   phase: ReturnType<typeof getTripPhase>;
   countdown: ReturnType<typeof getDepartureCountdown>;
+  days: TripDay[];
+  onOpenDay: (dayId: string) => void;
+  onOpenReservations: () => void;
+  onOpenNotes: () => void;
 }) {
   if (phase === 'before') {
     const countdownUnits = [
@@ -80,18 +115,14 @@ function TodayScreen({
     ];
 
     return (
-      <>
-        <ScreenHeader eyebrow="Countdown" title="Disney Mayhem">
-          <p>Departure is Friday, May 29 at 4:00 AM.</p>
-        </ScreenHeader>
-
-        <section aria-labelledby="countdown-heading" className="section-rise px-4">
-          <div className="rounded-[2rem] bg-[#111111] px-5 py-8 text-center shadow-2xl shadow-black/30 sm:px-8 sm:py-10">
-            <p className="text-[13px] font-black uppercase tracking-[0.18em] text-white">Disney Mayhem begins in...</p>
-            <h2 id="countdown-heading" className="sr-only">
-              Live countdown to Disney Mayhem departure
-            </h2>
-            <div className="mt-8 flex flex-wrap justify-center gap-x-6 gap-y-7" aria-live="polite" aria-label="Live countdown to departure">
+      <main className="screen-fade px-4 pb-8 pt-8 sm:pt-12">
+        <section aria-labelledby="countdown-heading" className="section-rise text-center">
+          <h1 id="countdown-heading" className="text-[38px] font-black leading-none tracking-[0.08em] text-white sm:text-[52px]">
+            DISNEY MAYHEM
+          </h1>
+          <p className="mt-5 text-[13px] font-black uppercase tracking-[0.18em] text-white">Disney Mayhem begins in...</p>
+          <div className="mx-auto mt-7 max-w-3xl rounded-[1.75rem] bg-[#111111] px-5 py-7 shadow-2xl shadow-black/30 sm:px-8 sm:py-9">
+            <div className="flex flex-wrap justify-center gap-x-6 gap-y-7" aria-live="polite" aria-label="Live countdown to departure">
               {countdownUnits.map((unit) => (
                 <div key={unit.label} className="basis-[calc(50%-0.75rem)] sm:basis-auto">
                   <div className="tabular-nums font-black leading-none text-[#0A84FF] [font-size:clamp(2.8rem,12vw,5.5rem)]">
@@ -102,30 +133,45 @@ function TodayScreen({
               ))}
             </div>
             {nextItem ? (
-              <p className="mt-9 text-[15px] font-semibold text-[#A1A1A6]">
+              <p className="mt-8 text-[15px] font-semibold text-[#A1A1A6]">
                 First up: {formatTimeRange(nextItem)} · {nextItem.title}
               </p>
             ) : null}
           </div>
         </section>
 
-        <section aria-labelledby="prep-heading" className="section-rise mt-5 px-4 pb-6">
-          <h2 id="prep-heading" className="mb-3 text-lg font-black text-white">
-            Prep Focus
+        <section aria-labelledby="dashboard-heading" className="section-rise mt-10">
+          <h2 id="dashboard-heading" className="text-[13px] font-black uppercase tracking-[0.18em] text-[#A1A1A6]">
+            Trip Dashboard
           </h2>
-          <div className="space-y-3">
-            {attentionItems.slice(0, 4).map(({ day: attentionDay, item }) => (
-              <CompactItem
-                key={item.id}
-                item={item}
-                statuses={statuses}
-                eyebrow={formatDateLabel(attentionDay.date)}
-                onEdit={() => onEditItem(attentionDay.id, item)}
-              />
-            ))}
+          <div className="mt-4 grid grid-cols-1 gap-3 min-[390px]:grid-cols-2">
+            {days.map((tripDay) => {
+              const presentation = getDayPresentation(tripDay);
+              return (
+                <DashboardTile
+                  key={tripDay.id}
+                  title={formatDateLabel(tripDay.date)}
+                  subtitle={tripDay.label}
+                  icon={presentation.symbol}
+                  onClick={() => onOpenDay(tripDay.id)}
+                />
+              );
+            })}
+            <DashboardTile
+              title="Reservations"
+              subtitle="Dining and fixed plans"
+              icon="🍽️"
+              onClick={onOpenReservations}
+            />
+            <DashboardTile
+              title="Notes"
+              subtitle="Family reminders"
+              icon="📝"
+              onClick={onOpenNotes}
+            />
           </div>
         </section>
-      </>
+      </main>
     );
   }
 
@@ -568,17 +614,21 @@ function AllDaysScreen({
   days,
   onEditItem,
   onAddItem,
+  title = 'All Days',
+  description = 'Fixed reservations and transport stay timed. Ride groups stay flexible and grouped.',
 }: {
   statuses: Record<string, ItemStatus>;
   onCycleStatus: (id: string) => void;
   days: TripDay[];
   onEditItem: (dayId: string, item: TripItem) => void;
   onAddItem: (dayId: string) => void;
+  title?: string;
+  description?: string;
 }) {
   return (
     <>
-      <ScreenHeader eyebrow="Timeline" title="All Days">
-        Fixed reservations and transport stay timed. Ride groups stay flexible and grouped.
+      <ScreenHeader eyebrow="Timeline" title={title}>
+        {description}
       </ScreenHeader>
       {days.map((day) => (
         <DayTimeline key={day.id} day={day} statuses={statuses} onCycleStatus={onCycleStatus} onEditItem={onEditItem} onAddItem={onAddItem} />
@@ -660,6 +710,7 @@ function NotesScreen({
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<AppTab>('today');
+  const [selectedDayId, setSelectedDayId] = useState<string | null>(null);
   const [now, setNow] = useState(() => new Date());
   const [editor, setEditor] = useState<EditorState | null>(null);
   const tripStorage = useTripStorage();
@@ -678,6 +729,28 @@ export default function App() {
   const activeState = useMemo(() => getActiveScheduleState(tripDays, tripStorage.statuses, now), [now, tripDays, tripStorage.statuses]);
   const phase = useMemo(() => getTripPhase(now), [now]);
   const countdown = useMemo(() => getDepartureCountdown(now), [now]);
+  const selectedTimelineDay = selectedDayId ? tripDays.find((tripDay) => tripDay.id === selectedDayId) : undefined;
+  const timelineDays = selectedTimelineDay ? [selectedTimelineDay] : tripDays;
+
+  function openTab(tab: AppTab) {
+    if (tab === 'days') setSelectedDayId(null);
+    setActiveTab(tab);
+  }
+
+  function openDashboard() {
+    setSelectedDayId(null);
+    setActiveTab('today');
+  }
+
+  function openDashboardDay(dayId: string) {
+    setSelectedDayId(dayId);
+    setActiveTab('days');
+  }
+
+  function openDashboardTab(tab: Extract<AppTab, 'reservations' | 'notes'>) {
+    setSelectedDayId(null);
+    setActiveTab(tab);
+  }
 
   function openEditItem(dayId: string, item: TripItem) {
     setEditor({
@@ -723,26 +796,47 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#000000] text-white">
-      <div key={activeTab} className="screen-fade mx-auto max-w-4xl pb-20">
+      <div key={`${activeTab}-${selectedDayId ?? 'all'}`} className={`screen-fade mx-auto max-w-4xl ${phase === 'before' ? 'pb-8' : 'pb-20'}`}>
+        {phase === 'before' && activeTab !== 'today' ? (
+          <div className="px-4 pt-5">
+            <button
+              type="button"
+              onClick={openDashboard}
+              className="min-h-11 rounded-full bg-[#1C1C1E] px-4 py-2 text-sm font-black text-white transition hover:bg-[#2C2C2E] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]"
+            >
+              Dashboard
+            </button>
+          </div>
+        ) : null}
         {activeTab === 'today' ? (
           <TodayScreen
             {...activeState}
             statuses={tripStorage.statuses}
             onCycleStatus={tripStorage.cycleStatus}
             onEditItem={openEditItem}
-            onViewFullDay={() => setActiveTab('days')}
+            onViewFullDay={() => openDashboardDay(activeState.day.id)}
             attentionItems={attentionItems}
             phase={phase}
             countdown={countdown}
+            days={tripDays}
+            onOpenDay={openDashboardDay}
+            onOpenReservations={() => openDashboardTab('reservations')}
+            onOpenNotes={() => openDashboardTab('notes')}
           />
         ) : null}
         {activeTab === 'days' ? (
           <AllDaysScreen
-            days={tripDays}
+            days={timelineDays}
             statuses={tripStorage.statuses}
             onCycleStatus={tripStorage.cycleStatus}
             onEditItem={openEditItem}
             onAddItem={openAddItem}
+            title={selectedTimelineDay ? selectedTimelineDay.label : 'All Days'}
+            description={
+              selectedTimelineDay
+                ? `${formatDateLabel(selectedTimelineDay.date)} · ${selectedTimelineDay.park}`
+                : 'Fixed reservations and transport stay timed. Ride groups stay flexible and grouped.'
+            }
           />
         ) : null}
         {activeTab === 'attention' ? <AttentionScreen statuses={tripStorage.statuses} attentionItems={attentionItems} onEditItem={openEditItem} /> : null}
@@ -751,7 +845,7 @@ export default function App() {
         ) : null}
         {activeTab === 'notes' ? <NotesScreen notes={tripStorage.notes} setNote={tripStorage.setNote} days={tripDays} /> : null}
       </div>
-      <Tabs activeTab={activeTab} onChange={setActiveTab} />
+      {phase === 'before' ? null : <Tabs activeTab={activeTab} onChange={openTab} />}
       {editor ? (
         <ItemEditorSheet
           editor={editor}
