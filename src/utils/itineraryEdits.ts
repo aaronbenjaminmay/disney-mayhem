@@ -65,6 +65,8 @@ function normalizeTripItem(item: TripItem): TripItem {
 }
 
 export function toEditableFields(item: TripItem, dayDate?: string): EditableItemFields {
+  const reservationLike = isReservationItem(item) || 'confirmationNumber' in item;
+
   return {
     date: item.type === 'reservation' ? item.date : dayDate,
     time: item.time ?? '',
@@ -73,12 +75,12 @@ export function toEditableFields(item: TripItem, dayDate?: string): EditableItem
     location: item.location,
     from: item.type === 'scheduled' ? item.from ?? '' : '',
     to: item.type === 'scheduled' ? item.to ?? '' : '',
-    area: item.type === 'reservation' ? item.area ?? '' : '',
-    confirmationNumber: item.type === 'reservation' ? item.confirmationNumber ?? '' : '',
+    area: 'area' in item ? item.area ?? '' : '',
+    confirmationNumber: 'confirmationNumber' in item ? item.confirmationNumber ?? '' : '',
     notes: item.notes ?? '',
     category: item.type === 'scheduled' ? item.category : undefined,
     placement: item.placement,
-    type: isReservationItem(item) ? 'reservation' : item.type,
+    type: reservationLike ? 'reservation' : getSafeItemType((item as TripItem & { type?: unknown }).type, getNormalizedFallbackType(item), item.id),
   };
 }
 
