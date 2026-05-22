@@ -131,7 +131,7 @@ function formatLightningLane(activity: Activity): string | undefined {
 }
 
 function getItemConfirmationNumber(item: TripItem): string | undefined {
-  return item.type === 'reservation' ? item.confirmationNumber : undefined;
+  return 'confirmationNumber' in item ? item.confirmationNumber : undefined;
 }
 
 function groupReservationsByDay(reservations: ReturnType<typeof getReservations>) {
@@ -2407,9 +2407,7 @@ function ReservationsScreen({
                       <p className="text-[12px] font-black uppercase tracking-[0.16em] text-[#A1A1A6]">{formatTimeRange(item)}</p>
                       <h3 className="mt-2 text-xl font-black leading-tight text-white">{item.title}</h3>
                       <p className="mt-1 text-sm font-semibold text-[#A1A1A6]">{item.location}</p>
-                      {getItemConfirmationNumber(item) ? (
-                        <p className="mt-2 text-sm text-[#A1A1A6]">Confirmation: {getItemConfirmationNumber(item)}</p>
-                      ) : null}
+                      {getItemConfirmationNumber(item) ? <p className="mt-2 text-sm text-[#A1A1A6]">Confirmation #{getItemConfirmationNumber(item)}</p> : null}
                       {item.notes ? <p className="mt-2 text-sm leading-6 text-[#A1A1A6]">{item.notes}</p> : null}
                     </div>
                     <div className="flex shrink-0 gap-2">

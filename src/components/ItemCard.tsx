@@ -27,9 +27,14 @@ function EditButton({ item, onEdit }: { item: TripItem; onEdit?: (item: TripItem
   );
 }
 
+function getConfirmationNumber(item: TripItem): string | undefined {
+  return 'confirmationNumber' in item ? item.confirmationNumber : undefined;
+}
+
 export function ItemCard({ item, statuses, onCycleStatus, onEdit, compact = false }: ItemCardProps) {
   const itemStatus = statuses[getItemStatusKey(item)];
   const nextActivity = findNextActivity(item, statuses);
+  const confirmationNumber = getConfirmationNumber(item);
 
   if (item.type === 'flexible') {
     return (
@@ -87,6 +92,7 @@ export function ItemCard({ item, statuses, onCycleStatus, onEdit, compact = fals
               {[item.from, item.to].filter(Boolean).join(' -> ')}
             </p>
           ) : null}
+          {confirmationNumber ? <p className="mt-2 text-[14px] text-[#A1A1A6]">Confirmation #{confirmationNumber}</p> : null}
         </div>
         <div className="flex gap-2">
           <EditButton item={item} onEdit={onEdit} />

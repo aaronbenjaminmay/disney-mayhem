@@ -128,10 +128,13 @@ export function createItemFromFields(id: string, fields: EditableItemFields): Tr
 }
 
 function applyEdit(item: TripItem, fields?: EditableItemFields): TripItem {
+  const runtimeTypeKnown = isKnownItemType((item as TripItem & { type?: unknown }).type);
   const safeItem = normalizeTripItem(item);
   if (!fields) return safeItem;
 
-  const preservedType = getSafeItemType(safeItem.type, getNormalizedFallbackType(safeItem), safeItem.id);
+  const preservedType = runtimeTypeKnown
+    ? getSafeItemType(safeItem.type, getNormalizedFallbackType(safeItem), safeItem.id)
+    : getSafeItemType(fields.type, getNormalizedFallbackType(safeItem), safeItem.id);
   const safeFields = {
     ...fields,
     type: preservedType,
