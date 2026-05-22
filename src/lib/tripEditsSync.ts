@@ -1,4 +1,5 @@
 import type { Activity, EditableActivityFields, EditableItemFields, ItemStatus, TripItem } from '../types';
+import { createItemFromFields } from '../utils/itineraryEdits';
 import { supabase, tripId } from './supabaseClient';
 
 const statusEditType = 'status';
@@ -11,7 +12,7 @@ type TripEditRow = {
   updated_at?: string | null;
   payload?: {
     status?: ItemStatus;
-    action?: 'edit' | 'add' | 'delete';
+    action?: 'edit' | 'add' | 'delete' | 'delete-land-group';
     groupId?: string;
     landGroupId?: string;
     parentItemId?: string;
@@ -21,6 +22,7 @@ type TripEditRow = {
     fields?: EditableActivityFields;
     itemFields?: EditableItemFields;
     activityId?: string;
+    activityIds?: string[];
     saved_at?: string;
   } | null;
 };
@@ -30,6 +32,7 @@ export type SupabaseStatusEdits = {
   activityEdits: Record<string, EditableActivityFields>;
   addedActivities: Record<string, Activity[]>;
   deletedActivityIds: string[];
+  deletedLandGroupIds: string[];
   itemEdits: Record<string, EditableItemFields>;
   addedItems: Record<string, TripItem[]>;
   deletedItemIds: string[];
@@ -79,6 +82,7 @@ export async function fetchSupabaseStatusEdits(sinceUpdatedAt?: string | null): 
   const activityEdits: Record<string, EditableActivityFields> = {};
   const addedActivities: Record<string, Activity[]> = {};
   const deletedActivityIds: string[] = [];
+  const deletedLandGroupIds: string[] = [];
   const itemEdits: Record<string, EditableItemFields> = {};
   const addedItems: Record<string, TripItem[]> = {};
   const deletedItemIds: string[] = [];
@@ -139,8 +143,27 @@ export async function fetchSupabaseStatusEdits(sinceUpdatedAt?: string | null): 
     if (row.type === activityEditType && row.item_id && row.payload?.action === 'delete') {
       deletedActivityIds.push(row.item_id);
     }
+    if (row.type === activityEditType && row.payload?.action === 'delete-land-group' && (row.payload.landGroupId || row.payload.groupId || row.item_id)) {
+      const groupId = row.payload.landGroupId ?? row.payload.groupId ?? row.item_id;
+      if (groupId) deletedLandGroupIds.push(groupId);
+      row.payload.activityIds?.forEach((activityId) => deletedActivityIds.push(activityId));
+    }
     if (row.type === itemEditType && row.item_id && row.payload?.action === 'edit' && row.payload.itemFields) {
       itemEdits[row.item_id] = row.payload.itemFields;
+      if (row.item_id.startsWith('local-')) {
+        const targetDayId = row.payload.itemFields.type === 'reservation' && row.payload.itemFields.date ? row.payload.itemFields.date : row.payload.itemFields.date;
+        if (targetDayId) {
+          addedItems[targetDayId] = [
+            ...(addedItems[targetDayId] ?? []),
+            createItemFromFields(row.item_id, row.payload.itemFields),
+          ];
+        } else {
+          console.warn('Disney Mayhem persistence warning: local item edit has no target day', {
+            item_id: row.item_id,
+            action: row.payload.action,
+          });
+        }
+      }
     }
     if (row.type === itemEditType && row.payload?.action === 'add' && row.payload.dayId && row.payload.item) {
       addedItems[row.payload.dayId] = [...(addedItems[row.payload.dayId] ?? []), row.payload.item];
@@ -158,6 +181,7 @@ export async function fetchSupabaseStatusEdits(sinceUpdatedAt?: string | null): 
     activityEdits,
     addedActivities,
     deletedActivityIds,
+    deletedLandGroupIds,
     itemEdits,
     addedItems,
     deletedItemIds,
@@ -291,6 +315,17 @@ export async function saveSupabaseActivityDelete(activityId: string, parentItemI
     landGroupId: groupId,
     parentItemId,
     dayId,
+  });
+}
+
+export async function saveSupabaseLandGroupDelete(groupId: string, parentItemId: string, dayId: string, activityIds: string[]): Promise<void> {
+  await saveSupabaseActivityRow(groupId, {
+    action: 'delete-land-group',
+    groupId,
+    landGroupId: groupId,
+    parentItemId,
+    dayId,
+    activityIds,
   });
 }
 

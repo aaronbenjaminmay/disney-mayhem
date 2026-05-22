@@ -76,12 +76,17 @@ export function ItemCard({ item, statuses, onCycleStatus, onEdit, compact = fals
   }
 
   return (
-    <article className="py-4">
+    <article className="glass-surface my-4 rounded-[1.35rem] border border-white/[0.08] px-4 py-4 shadow-[0_8px_24px_rgba(0,0,0,0.28)]">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-[12px] font-black uppercase tracking-[0.16em] text-[#0A84FF]">{formatTimeRange(item)}</p>
           <h3 className="mt-2 text-[20px] font-black leading-tight text-white">{item.title}</h3>
           <p className="mt-2 text-[15px] font-semibold text-[#A1A1A6]">{item.location}</p>
+          {item.type === 'scheduled' && (item.from || item.to) ? (
+            <p className="mt-1 text-[14px] text-[#A1A1A6]">
+              {[item.from, item.to].filter(Boolean).join(' -> ')}
+            </p>
+          ) : null}
         </div>
         <div className="flex gap-2">
           <EditButton item={item} onEdit={onEdit} />

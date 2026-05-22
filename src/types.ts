@@ -20,6 +20,11 @@ export type ScheduledCategory =
   | 'logistics'
   | 'attention';
 
+export type ItemPlacement = {
+  mode: 'before' | 'after' | 'end';
+  targetItemId?: string;
+};
+
 export type Activity = {
   id: string;
   landGroupId?: string;
@@ -40,15 +45,18 @@ export type Activity = {
 export type ScheduledItem = {
   id: string;
   type: 'scheduled';
-  time: string;
+  time?: string;
   endTime?: string;
   title: string;
   location: string;
+  from?: string;
+  to?: string;
   area?: string;
   activities?: Activity[];
   category: ScheduledCategory;
   notes?: string;
   needsAttention?: boolean;
+  placement?: ItemPlacement;
 };
 
 export type ReservationItem = {
@@ -64,6 +72,7 @@ export type ReservationItem = {
   notes?: string;
   category: 'reservation';
   needsAttention?: boolean;
+  placement?: ItemPlacement;
 };
 
 export type FlexibleBlock = {
@@ -77,6 +86,7 @@ export type FlexibleBlock = {
   activities: Activity[];
   notes?: string;
   needsAttention?: boolean;
+  placement?: ItemPlacement;
 };
 
 export type TripItem = ScheduledItem | ReservationItem | FlexibleBlock;
@@ -121,6 +131,7 @@ export type PersistedState = {
   activityEdits: Record<string, EditableActivityFields>;
   addedActivities: Record<string, Activity[]>;
   deletedActivityIds: string[];
+  deletedLandGroupIds: string[];
 };
 
 export type EditableItemFields = {
@@ -129,9 +140,13 @@ export type EditableItemFields = {
   endTime?: string;
   title: string;
   location: string;
+  from?: string;
+  to?: string;
   area?: string;
   confirmationNumber?: string;
   notes?: string;
+  category?: ScheduledCategory;
+  placement?: ItemPlacement;
   type: TripItem['type'];
 };
 

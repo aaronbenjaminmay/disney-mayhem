@@ -5,6 +5,7 @@ import {
   saveSupabaseActivityAdd,
   saveSupabaseActivityDelete,
   saveSupabaseActivityEdit,
+  saveSupabaseLandGroupDelete,
   saveSupabaseItemAdd,
   saveSupabaseItemDelete,
   saveSupabaseItemEdit,
@@ -21,6 +22,7 @@ const defaultState: PersistedState = {
   activityEdits: {},
   addedActivities: {},
   deletedActivityIds: [],
+  deletedLandGroupIds: [],
 };
 
 function loadState(): PersistedState {
@@ -37,6 +39,7 @@ function loadState(): PersistedState {
       activityEdits: parsed.activityEdits ?? {},
       addedActivities: parsed.addedActivities ?? {},
       deletedActivityIds: parsed.deletedActivityIds ?? [],
+      deletedLandGroupIds: parsed.deletedLandGroupIds ?? [],
     };
   } catch {
     return defaultState;
@@ -95,6 +98,7 @@ export function useTripStorage() {
         const nextActivityEdits = preferSupabaseSnapshot ? edits.activityEdits : { ...current.activityEdits, ...edits.activityEdits };
         const nextAddedActivities = preferSupabaseSnapshot ? edits.addedActivities : mergeAddedActivities(current.addedActivities, edits.addedActivities);
         const nextDeletedActivityIds = preferSupabaseSnapshot ? edits.deletedActivityIds : [...new Set([...current.deletedActivityIds, ...edits.deletedActivityIds])];
+        const nextDeletedLandGroupIds = preferSupabaseSnapshot ? edits.deletedLandGroupIds : [...new Set([...current.deletedLandGroupIds, ...edits.deletedLandGroupIds])];
         const nextItemEdits = preferSupabaseSnapshot ? edits.itemEdits : { ...current.itemEdits, ...edits.itemEdits };
         const nextAddedItems = preferSupabaseSnapshot ? edits.addedItems : mergeAddedItems(current.addedItems, edits.addedItems);
         const nextDeletedItemIds = preferSupabaseSnapshot ? edits.deletedItemIds : [...new Set([...current.deletedItemIds, ...edits.deletedItemIds])];
@@ -102,10 +106,11 @@ export function useTripStorage() {
           statusesAreEqual(current.statuses, nextStatuses) &&
           JSON.stringify(current.itemEdits) === JSON.stringify(nextItemEdits) &&
           JSON.stringify(current.addedItems) === JSON.stringify(nextAddedItems) &&
-          current.deletedItemIds.length === nextDeletedItemIds.length &&
+          JSON.stringify(current.deletedItemIds) === JSON.stringify(nextDeletedItemIds) &&
           JSON.stringify(current.activityEdits) === JSON.stringify(nextActivityEdits) &&
           JSON.stringify(current.addedActivities) === JSON.stringify(nextAddedActivities) &&
-          current.deletedActivityIds.length === nextDeletedActivityIds.length
+          JSON.stringify(current.deletedActivityIds) === JSON.stringify(nextDeletedActivityIds) &&
+          JSON.stringify(current.deletedLandGroupIds) === JSON.stringify(nextDeletedLandGroupIds)
         ) {
           return current;
         }
@@ -119,6 +124,7 @@ export function useTripStorage() {
           activityEdits: nextActivityEdits,
           addedActivities: nextAddedActivities,
           deletedActivityIds: nextDeletedActivityIds,
+          deletedLandGroupIds: nextDeletedLandGroupIds,
         };
       });
     }
@@ -166,6 +172,7 @@ export function useTripStorage() {
       activityEdits: state.activityEdits,
       addedActivities: state.addedActivities,
       deletedActivityIds: state.deletedActivityIds,
+      deletedLandGroupIds: state.deletedLandGroupIds,
       setStatus(id: string, status: ItemStatus) {
         setState((current) => ({
           ...current,
@@ -253,6 +260,14 @@ export function useTripStorage() {
           deletedActivityIds: current.deletedActivityIds.includes(activityId) ? current.deletedActivityIds : [...current.deletedActivityIds, activityId],
         }));
         void saveSupabaseActivityDelete(activityId, parentItemId, dayId, groupId);
+      },
+      deleteLandGroup(dayId: string, parentItemId: string, groupId: string, activityIds: string[]) {
+        setState((current) => ({
+          ...current,
+          deletedLandGroupIds: current.deletedLandGroupIds.includes(groupId) ? current.deletedLandGroupIds : [...current.deletedLandGroupIds, groupId],
+          deletedActivityIds: [...new Set([...current.deletedActivityIds, ...activityIds])],
+        }));
+        void saveSupabaseLandGroupDelete(groupId, parentItemId, dayId, activityIds);
       },
     }),
     [state],

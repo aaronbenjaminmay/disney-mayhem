@@ -1,5 +1,5 @@
-import type { Activity, EditableActivityFields, EditableItemFields, ReservationItem, ScheduledItem, TripDay, TripItem } from '../types';
-import { slugifyLandGroupPart, withTripDayGroups } from './landBlocks';
+import type { Activity, EditableActivityFields, EditableItemFields, ItemPlacement, ReservationItem, ScheduledItem, TripDay, TripItem } from '../types';
+import { getActivityLand, getLandGroupId, slugifyLandGroupPart, withTripDayGroups } from './landBlocks';
 import { getItemStart } from './time';
 
 const warnedPersistenceIds = new Set<string>();
@@ -27,9 +27,13 @@ export function toEditableFields(item: TripItem, dayDate?: string): EditableItem
     endTime: item.endTime ?? '',
     title: item.title,
     location: item.location,
+    from: item.type === 'scheduled' ? item.from ?? '' : '',
+    to: item.type === 'scheduled' ? item.to ?? '' : '',
     area: item.type === 'reservation' ? item.area ?? '' : '',
     confirmationNumber: item.type === 'reservation' ? item.confirmationNumber ?? '' : '',
     notes: item.notes ?? '',
+    category: item.type === 'scheduled' ? item.category : undefined,
+    placement: item.placement,
     type: isReservationItem(item) ? 'reservation' : item.type,
   };
 }
@@ -43,9 +47,12 @@ export function createItemFromFields(id: string, fields: EditableItemFields): Tr
     endTime: fields.endTime?.trim() || undefined,
     title: fields.title.trim() || 'New item',
     location: fields.location.trim(),
+    from: fields.from?.trim() || undefined,
+    to: fields.to?.trim() || undefined,
     area: fields.area?.trim() || undefined,
     confirmationNumber: fields.confirmationNumber?.trim() || undefined,
     notes: fields.notes?.trim() || undefined,
+    placement: fields.placement,
   };
 
   if (fields.type === 'reservation') {
@@ -70,8 +77,8 @@ export function createItemFromFields(id: string, fields: EditableItemFields): Tr
   return {
     ...base,
     type: 'scheduled',
-    time: time || '09:00',
-    category: 'park',
+    time: time || undefined,
+    category: fields.category ?? 'park',
   };
 }
 
@@ -125,6 +132,30 @@ function getItemTargetDayId(item: TripItem, sourceDayId: string, fields?: Editab
   return sourceDayId;
 }
 
+function getPlacementIndex(items: TripItem[], placement?: ItemPlacement): number {
+  if (!placement || placement.mode === 'end' || !placement.targetItemId) return items.length;
+
+  const targetIndex = items.findIndex((item) => item.id === placement.targetItemId);
+  if (targetIndex < 0) return items.length;
+  return placement.mode === 'before' ? targetIndex : targetIndex + 1;
+}
+
+function insertAddedItem(items: TripItem[], item: TripItem): TripItem[] {
+  const nextItems = [...items];
+
+  if (item.time) {
+    const itemStart = getItemStart(item);
+    const timeIndex = nextItems.findIndex((candidate) => candidate.time && getItemStart(candidate) > itemStart);
+    if (timeIndex >= 0) {
+      nextItems.splice(timeIndex, 0, item);
+      return nextItems;
+    }
+  }
+
+  nextItems.splice(getPlacementIndex(nextItems, item.placement), 0, item);
+  return nextItems;
+}
+
 export function toEditableActivityFields(activity: Activity): EditableActivityFields {
   return {
     landGroupId: activity.landGroupId,
@@ -161,23 +192,34 @@ export function createActivityFromFields(id: string, fields: EditableActivityFie
 }
 
 function applyActivityEdits(
+  day: TripDay,
   item: TripItem,
   activityEdits: Record<string, EditableActivityFields>,
   addedActivities: Record<string, Activity[]>,
   deletedActivityIds: Set<string>,
+  deletedLandGroupIds: Set<string>,
 ): TripItem {
   if (!('activities' in item) || !Array.isArray(item.activities)) return item;
+  const activityBlock = item as TripItem & { activities: Activity[]; area?: string };
   const parentGroupMarker = `__${slugifyLandGroupPart(item.id)}__`;
+  const groupPrefix = `${getLandGroupId(day.id, item.id, '').replace(/__land$/, '')}__`;
+  const baseActivityIds = new Set(item.activities.map((activity) => activity.id));
+  const getActivityGroupId = (activity: Activity) => {
+    const inferredGroupId = getLandGroupId(day.id, item.id, getActivityLand(day.park, activityBlock, activity));
+    if (activity.landGroupId?.startsWith(groupPrefix) && activity.landGroupId === inferredGroupId) return activity.landGroupId;
+    return inferredGroupId;
+  };
   const groupedAddedActivities = Object.entries(addedActivities)
     .filter(([groupId]) => groupId !== item.id && groupId.includes(parentGroupMarker))
+    .filter(([groupId]) => !deletedLandGroupIds.has(groupId))
     .flatMap(([, activities]) => activities);
 
   const activities = [
     ...new Map(
       [
-        ...item.activities.filter((activity) => !deletedActivityIds.has(activity.id)),
-        ...(addedActivities[item.id] ?? []).filter((activity) => !deletedActivityIds.has(activity.id)),
-        ...groupedAddedActivities.filter((activity) => !deletedActivityIds.has(activity.id)),
+        ...item.activities.filter((activity) => !deletedActivityIds.has(activity.id) && !deletedLandGroupIds.has(getActivityGroupId(activity))),
+        ...(addedActivities[item.id] ?? []).filter((activity) => !baseActivityIds.has(activity.id) && !deletedActivityIds.has(activity.id) && !deletedLandGroupIds.has(getActivityGroupId(activity))),
+        ...groupedAddedActivities.filter((activity) => !baseActivityIds.has(activity.id) && !deletedActivityIds.has(activity.id) && !deletedLandGroupIds.has(getActivityGroupId(activity))),
       ].map((activity) => [activity.id, activity]),
     ).values(),
   ]
@@ -185,10 +227,25 @@ function applyActivityEdits(
       const fields = activityEdits[activity.id];
       if (!fields) return activity;
 
-      const mergedActivity = { ...activity, ...createActivityFromFields(activity.id, fields) };
+      const expectedGroupId = getActivityGroupId(activity);
+      const editGroupId = fields.landGroupId;
+      const hasMismatchedBaseGroup = Boolean(!activity.landGroupId && editGroupId && editGroupId !== expectedGroupId);
+      const safeFields = hasMismatchedBaseGroup
+        ? {
+            ...fields,
+            landGroupId: expectedGroupId,
+            location: getActivityLand(day.park, activityBlock, activity),
+          }
+        : fields;
+
+      if (hasMismatchedBaseGroup) {
+        warnUnknownPersistenceReference('ambiguous land group edit', `${activity.id} -> ${editGroupId}`);
+      }
+
+      const mergedActivity = { ...activity, ...createActivityFromFields(activity.id, safeFields) };
       console.log('Merge result for edited ride', {
         activityId: activity.id,
-        payload: fields,
+        payload: safeFields,
         mergedActivity,
       });
       return mergedActivity;
@@ -213,9 +270,11 @@ export function mergeTripEdits(
   activityEdits: Record<string, EditableActivityFields> = {},
   addedActivities: Record<string, Activity[]> = {},
   deletedActivityIds: string[] = [],
+  deletedLandGroupIds: string[] = [],
 ): TripDay[] {
   const deleted = new Set(deletedItemIds);
   const deletedActivities = new Set(deletedActivityIds);
+  const deletedLandGroups = new Set(deletedLandGroupIds);
   const itemsByDay = new Map<string, TripItem[]>();
   const knownDayIds = new Set(baseDays.map((day) => day.id));
   const knownItemIds = new Set<string>();
@@ -278,6 +337,13 @@ export function mergeTripEdits(
     }
   });
 
+  deletedLandGroupIds.forEach((groupId) => {
+    const targetsKnownGroup = [...knownItemIds].some((itemId) => groupId.includes(`__${slugifyLandGroupPart(itemId)}__`));
+    if (!targetsKnownGroup) {
+      warnUnknownPersistenceReference('deleted land group', groupId);
+    }
+  });
+
   baseDays.forEach((day) => {
     day.items
       .filter((item) => !deleted.has(item.id))
@@ -296,12 +362,14 @@ export function mergeTripEdits(
         const fields = itemEdits[item.id];
         const updated = applyEdit(item, fields);
         const targetDayId = getItemTargetDayId(updated, sourceDayId, fields);
-        itemsByDay.set(targetDayId, [...(itemsByDay.get(targetDayId) ?? []), updated]);
+        itemsByDay.set(targetDayId, insertAddedItem(itemsByDay.get(targetDayId) ?? [], updated));
       });
   });
 
   return baseDays.map((day) => {
-    const items = (itemsByDay.get(day.id) ?? []).map((item) => applyActivityEdits(item, activityEdits, addedActivities, deletedActivities));
+    const items = (itemsByDay.get(day.id) ?? [])
+      .map((item) => applyActivityEdits(day, item, activityEdits, addedActivities, deletedActivities, deletedLandGroups))
+      .filter((item) => !('activities' in item) || !Array.isArray(item.activities) || item.activities.length > 0);
 
     return withTripDayGroups({
       ...day,

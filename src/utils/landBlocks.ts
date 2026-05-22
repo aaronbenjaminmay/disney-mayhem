@@ -9,6 +9,15 @@ function includesAny(text: string, values: string[]) {
   return values.some((value) => text.includes(value));
 }
 
+const parkLandNames: Record<ParkName, string[]> = {
+  'Magic Kingdom': ['Adventureland', 'Frontierland', 'Liberty Square', 'Fantasyland', 'Tomorrowland'],
+  EPCOT: ['World Celebration', 'World Discovery', 'World Showcase', 'World Showcase - Norway', 'World Showcase - France'],
+  'Hollywood Studios': ['Hollywood Boulevard', 'Toy Story Land', 'Galaxy’s Edge', 'Sunset Boulevard', 'Echo Lake'],
+  'Animal Kingdom': ['Africa', 'Rafiki’s Planet Watch', 'Pandora', 'Asia'],
+  'Travel Day': [],
+  'Resort Day': [],
+};
+
 export function slugifyLandGroupPart(value: string): string {
   return value
     .toLowerCase()
@@ -21,6 +30,16 @@ export function slugifyLandGroupPart(value: string): string {
 
 export function getLandGroupId(dayId: string, parentTimelineItemId: string, landName: string): string {
   return `${slugifyLandGroupPart(dayId)}__${slugifyLandGroupPart(parentTimelineItemId)}__${slugifyLandGroupPart(landName) || 'land'}`;
+}
+
+export function getLandDisplayName(park: ParkName, inferredLand: string, savedLocation?: string): string {
+  if (!savedLocation) return inferredLand;
+
+  const savedSlug = slugifyLandGroupPart(savedLocation);
+  const inferredSlug = slugifyLandGroupPart(inferredLand);
+  const savedIsDifferentKnownLand = parkLandNames[park]?.some((land) => slugifyLandGroupPart(land) === savedSlug) && savedSlug !== inferredSlug;
+
+  return savedIsDifferentKnownLand ? inferredLand : savedLocation;
 }
 
 export function getActivityLand(park: ParkName, block: ActivityBlock, activity: Activity): string {
@@ -134,8 +153,11 @@ export function buildLandBlocks(day: TripDay, items: TripItem[] = day.items): La
       block.activities.forEach((activity) => {
         const groupPrefix = `${getLandGroupId(day.id, block.id, '').replace(/__land$/, '')}__`;
         const hasStableGroup = activity.landGroupId?.startsWith(groupPrefix);
-        const land = hasStableGroup ? activity.location || getActivityLand(day.park, block, activity) : getActivityLand(day.park, block, activity);
-        const groupId = hasStableGroup && activity.landGroupId ? activity.landGroupId : getLandGroupId(day.id, block.id, land);
+        const inferredLand = getActivityLand(day.park, block, activity);
+        const inferredGroupId = getLandGroupId(day.id, block.id, inferredLand);
+        const hasConflictingStableGroup = Boolean(hasStableGroup && activity.landGroupId && activity.landGroupId !== inferredGroupId);
+        const land = hasStableGroup && !hasConflictingStableGroup ? getLandDisplayName(day.park, inferredLand, activity.location) : inferredLand;
+        const groupId = hasStableGroup && activity.landGroupId && !hasConflictingStableGroup ? activity.landGroupId : inferredGroupId;
         const existing =
           blocks.get(groupId) ??
           ({

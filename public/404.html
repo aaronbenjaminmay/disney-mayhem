@@ -3,9 +3,11 @@
   <head>
     <meta charset="utf-8" />
     <script>
-      // Redirect all 404s back to index.html with the path preserved
+      // Redirect GitHub Pages deep links back to the SPA with the path preserved.
+      var basePath = "/disney-mayhem/";
       var path = window.location.pathname;
-      window.location.replace("/disney-mayhem/" + "#!" + path);
+      var route = path.indexOf(basePath) === 0 ? path.slice(basePath.length - 1) : path;
+      window.location.replace(basePath + "#!" + route + window.location.search);
     </script>
   </head>
   <body></body>
