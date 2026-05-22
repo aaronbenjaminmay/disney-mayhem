@@ -1,5 +1,15 @@
 const CACHE_NAME = 'disney-mayhem-shell-v1';
-const APP_SHELL = ['./', './index.html', './manifest.webmanifest', './DisneyMayhem-WM.svg', './disneymayhem-background.jpg'];
+const APP_SHELL = [
+  './',
+  './index.html',
+  './manifest.webmanifest',
+  './apple-touch-icon.png',
+  './favicon.png',
+  './icon-192.png',
+  './icon-512.png',
+  './DisneyMayhem-WM.svg',
+  './disneymayhem-background.jpg',
+];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
