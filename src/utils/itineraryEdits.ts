@@ -1,5 +1,5 @@
-import type { Activity, EditableActivityFields, EditableItemFields, ItemPlacement, ReservationItem, ScheduledItem, TripDay, TripItem } from '../types';
-import { getActivityLand, getLandGroupId, slugifyLandGroupPart, withTripDayGroups } from './landBlocks';
+import type { Activity, EditableActivityFields, EditableItemFields, ItemPlacement, LandGroupOrder, ReservationItem, ScheduledItem, TripDay, TripItem } from '../types';
+import { getActivityLand, getLandGroupId, isDifferentKnownParkLand, slugifyLandGroupPart, withTripDayGroups } from './landBlocks';
 import { getItemStart } from './time';
 
 const warnedPersistenceIds = new Set<string>();
@@ -156,6 +156,43 @@ function insertAddedItem(items: TripItem[], item: TripItem): TripItem[] {
   return nextItems;
 }
 
+function getItemLandGroupIds(day: TripDay, item: TripItem): string[] {
+  if (!('activities' in item) || !Array.isArray(item.activities)) return [];
+  const activityBlock = item as TripItem & { activities: Activity[]; area?: string };
+  const groupPrefix = `${getLandGroupId(day.id, item.id, '').replace(/__land$/, '')}__`;
+
+  if (item.activities.length === 0) {
+    const land = activityBlock.area || item.location;
+    return [getLandGroupId(day.id, item.id, land)];
+  }
+
+  return [
+    ...new Set(
+      item.activities.map((activity) => {
+        const inferredLand = getActivityLand(day.park, activityBlock, activity);
+        const inferredGroupId = getLandGroupId(day.id, item.id, inferredLand);
+        const hasStableGroup = activity.landGroupId?.startsWith(groupPrefix);
+        const hasConflictingStableGroup = Boolean(hasStableGroup && activity.landGroupId && activity.landGroupId !== inferredGroupId && isDifferentKnownParkLand(day.park, inferredLand, activity.location));
+        return hasStableGroup && activity.landGroupId && !hasConflictingStableGroup ? activity.landGroupId : inferredGroupId;
+      }),
+    ),
+  ];
+}
+
+function applySingleLandItemOrder(day: TripDay, items: TripItem[], landGroupOrders: Record<string, LandGroupOrder>): TripItem[] {
+  return [...items].sort((left, right) => {
+    const leftIndex = items.findIndex((item) => item.id === left.id);
+    const rightIndex = items.findIndex((item) => item.id === right.id);
+    const leftGroups = getItemLandGroupIds(day, left);
+    const rightGroups = getItemLandGroupIds(day, right);
+    const leftOrder = leftGroups.length === 1 ? landGroupOrders[leftGroups[0]]?.displayOrder : undefined;
+    const rightOrder = rightGroups.length === 1 ? landGroupOrders[rightGroups[0]]?.displayOrder : undefined;
+
+    if (leftOrder === undefined && rightOrder === undefined) return leftIndex - rightIndex;
+    return (leftOrder ?? leftIndex * 1000) - (rightOrder ?? rightIndex * 1000) || leftIndex - rightIndex;
+  });
+}
+
 export function toEditableActivityFields(activity: Activity): EditableActivityFields {
   return {
     landGroupId: activity.landGroupId,
@@ -206,7 +243,8 @@ function applyActivityEdits(
   const baseActivityIds = new Set(item.activities.map((activity) => activity.id));
   const getActivityGroupId = (activity: Activity) => {
     const inferredGroupId = getLandGroupId(day.id, item.id, getActivityLand(day.park, activityBlock, activity));
-    if (activity.landGroupId?.startsWith(groupPrefix) && activity.landGroupId === inferredGroupId) return activity.landGroupId;
+    const inferredLand = getActivityLand(day.park, activityBlock, activity);
+    if (activity.landGroupId?.startsWith(groupPrefix) && (activity.landGroupId === inferredGroupId || !isDifferentKnownParkLand(day.park, inferredLand, activity.location))) return activity.landGroupId;
     return inferredGroupId;
   };
   const groupedAddedActivities = Object.entries(addedActivities)
@@ -229,12 +267,13 @@ function applyActivityEdits(
 
       const expectedGroupId = getActivityGroupId(activity);
       const editGroupId = fields.landGroupId;
-      const hasMismatchedBaseGroup = Boolean(!activity.landGroupId && editGroupId && editGroupId !== expectedGroupId);
+      const inferredLand = getActivityLand(day.park, activityBlock, activity);
+      const hasMismatchedBaseGroup = Boolean(!activity.landGroupId && editGroupId && editGroupId !== expectedGroupId && isDifferentKnownParkLand(day.park, inferredLand, fields.location));
       const safeFields = hasMismatchedBaseGroup
         ? {
             ...fields,
             landGroupId: expectedGroupId,
-            location: getActivityLand(day.park, activityBlock, activity),
+            location: inferredLand,
           }
         : fields;
 
@@ -271,6 +310,7 @@ export function mergeTripEdits(
   addedActivities: Record<string, Activity[]> = {},
   deletedActivityIds: string[] = [],
   deletedLandGroupIds: string[] = [],
+  landGroupOrders: Record<string, LandGroupOrder> = {},
 ): TripDay[] {
   const deleted = new Set(deletedItemIds);
   const deletedActivities = new Set(deletedActivityIds);
@@ -344,6 +384,13 @@ export function mergeTripEdits(
     }
   });
 
+  Object.entries(landGroupOrders).forEach(([groupId, order]) => {
+    const targetsKnownGroup = [...knownItemIds].some((itemId) => groupId.includes(`__${slugifyLandGroupPart(itemId)}__`));
+    if (!targetsKnownGroup) {
+      warnUnknownPersistenceReference('land group order', groupId, order);
+    }
+  });
+
   baseDays.forEach((day) => {
     day.items
       .filter((item) => !deleted.has(item.id))
@@ -367,14 +414,17 @@ export function mergeTripEdits(
   });
 
   return baseDays.map((day) => {
-    const items = (itemsByDay.get(day.id) ?? [])
+    const items = applySingleLandItemOrder(day, (itemsByDay.get(day.id) ?? [])
       .map((item) => applyActivityEdits(day, item, activityEdits, addedActivities, deletedActivities, deletedLandGroups))
-      .filter((item) => !('activities' in item) || !Array.isArray(item.activities) || item.activities.length > 0);
+      .filter((item) => !('activities' in item) || !Array.isArray(item.activities) || item.activities.length > 0), landGroupOrders);
 
-    return withTripDayGroups({
-      ...day,
-      items,
-    });
+    return withTripDayGroups(
+      {
+        ...day,
+        items,
+      },
+      landGroupOrders,
+    );
   });
 }
 

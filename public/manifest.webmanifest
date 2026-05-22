@@ -1,0 +1,18 @@
+{
+  "name": "Disney Mayhem",
+  "short_name": "Mayhem",
+  "description": "A family Disney World trip planner.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "theme_color": "#000000",
+  "background_color": "#000000",
+  "icons": [
+    {
+      "src": "DisneyMayhem-WM.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

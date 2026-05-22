@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { Activity, EditableActivityFields, EditableItemFields, ItemStatus, PersistedState, TripItem } from '../types';
+import type { Activity, EditableActivityFields, EditableItemFields, ItemStatus, LandGroupOrder, PersistedState, TripItem } from '../types';
 import {
   fetchSupabaseStatusEdits,
   saveSupabaseActivityAdd,
   saveSupabaseActivityDelete,
   saveSupabaseActivityEdit,
   saveSupabaseLandGroupDelete,
+  saveSupabaseLandGroupOrder,
   saveSupabaseItemAdd,
   saveSupabaseItemDelete,
   saveSupabaseItemEdit,
@@ -23,6 +24,7 @@ const defaultState: PersistedState = {
   addedActivities: {},
   deletedActivityIds: [],
   deletedLandGroupIds: [],
+  landGroupOrders: {},
 };
 
 function loadState(): PersistedState {
@@ -40,6 +42,7 @@ function loadState(): PersistedState {
       addedActivities: parsed.addedActivities ?? {},
       deletedActivityIds: parsed.deletedActivityIds ?? [],
       deletedLandGroupIds: parsed.deletedLandGroupIds ?? [],
+      landGroupOrders: parsed.landGroupOrders ?? {},
     };
   } catch {
     return defaultState;
@@ -99,6 +102,7 @@ export function useTripStorage() {
         const nextAddedActivities = preferSupabaseSnapshot ? edits.addedActivities : mergeAddedActivities(current.addedActivities, edits.addedActivities);
         const nextDeletedActivityIds = preferSupabaseSnapshot ? edits.deletedActivityIds : [...new Set([...current.deletedActivityIds, ...edits.deletedActivityIds])];
         const nextDeletedLandGroupIds = preferSupabaseSnapshot ? edits.deletedLandGroupIds : [...new Set([...current.deletedLandGroupIds, ...edits.deletedLandGroupIds])];
+        const nextLandGroupOrders = preferSupabaseSnapshot ? edits.landGroupOrders : { ...current.landGroupOrders, ...edits.landGroupOrders };
         const nextItemEdits = preferSupabaseSnapshot ? edits.itemEdits : { ...current.itemEdits, ...edits.itemEdits };
         const nextAddedItems = preferSupabaseSnapshot ? edits.addedItems : mergeAddedItems(current.addedItems, edits.addedItems);
         const nextDeletedItemIds = preferSupabaseSnapshot ? edits.deletedItemIds : [...new Set([...current.deletedItemIds, ...edits.deletedItemIds])];
@@ -110,7 +114,8 @@ export function useTripStorage() {
           JSON.stringify(current.activityEdits) === JSON.stringify(nextActivityEdits) &&
           JSON.stringify(current.addedActivities) === JSON.stringify(nextAddedActivities) &&
           JSON.stringify(current.deletedActivityIds) === JSON.stringify(nextDeletedActivityIds) &&
-          JSON.stringify(current.deletedLandGroupIds) === JSON.stringify(nextDeletedLandGroupIds)
+          JSON.stringify(current.deletedLandGroupIds) === JSON.stringify(nextDeletedLandGroupIds) &&
+          JSON.stringify(current.landGroupOrders) === JSON.stringify(nextLandGroupOrders)
         ) {
           return current;
         }
@@ -125,6 +130,7 @@ export function useTripStorage() {
           addedActivities: nextAddedActivities,
           deletedActivityIds: nextDeletedActivityIds,
           deletedLandGroupIds: nextDeletedLandGroupIds,
+          landGroupOrders: nextLandGroupOrders,
         };
       });
     }
@@ -173,6 +179,7 @@ export function useTripStorage() {
       addedActivities: state.addedActivities,
       deletedActivityIds: state.deletedActivityIds,
       deletedLandGroupIds: state.deletedLandGroupIds,
+      landGroupOrders: state.landGroupOrders,
       setStatus(id: string, status: ItemStatus) {
         setState((current) => ({
           ...current,
@@ -268,6 +275,16 @@ export function useTripStorage() {
           deletedActivityIds: [...new Set([...current.deletedActivityIds, ...activityIds])],
         }));
         void saveSupabaseLandGroupDelete(groupId, parentItemId, dayId, activityIds);
+      },
+      saveLandGroupOrder(groupId: string, order: LandGroupOrder) {
+        setState((current) => ({
+          ...current,
+          landGroupOrders: {
+            ...current.landGroupOrders,
+            [groupId]: order,
+          },
+        }));
+        void saveSupabaseLandGroupOrder(groupId, order);
       },
     }),
     [state],

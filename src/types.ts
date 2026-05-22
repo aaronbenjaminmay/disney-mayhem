@@ -111,6 +111,12 @@ export type LandBlock = {
   needsAttention?: boolean;
 };
 
+export type LandGroupOrder = {
+  dayId: string;
+  parentItemId: string;
+  displayOrder: number;
+};
+
 export type TripDay = {
   id: string;
   date: string;
@@ -132,6 +138,7 @@ export type PersistedState = {
   addedActivities: Record<string, Activity[]>;
   deletedActivityIds: string[];
   deletedLandGroupIds: string[];
+  landGroupOrders: Record<string, LandGroupOrder>;
 };
 
 export type EditableItemFields = {

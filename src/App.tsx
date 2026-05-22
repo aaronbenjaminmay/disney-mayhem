@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ItemCard } from './components/ItemCard';
 import { LucideIcon, type LucideIconName } from './components/LucideIcon';
 import { ScreenHeader } from './components/ScreenHeader';
@@ -6,7 +6,7 @@ import { StatusButton } from './components/StatusButton';
 import { AppTab, Tabs } from './components/Tabs';
 import { tripDays as baseTripDays, tripEndDate, tripStartDate } from './data/tripData';
 import { useTripStorage } from './hooks/useTripStorage';
-import type { Activity, EditableActivityFields, EditableItemFields, ItemPlacement, ItemStatus, LandBlock, ParkName, TripDay, TripItem } from './types';
+import type { Activity, EditableActivityFields, EditableItemFields, ItemPlacement, ItemStatus, LandBlock, LandGroupOrder, ParkName, TripDay, TripItem } from './types';
 import {
   createActivityFromFields,
   createItemFromFields,
@@ -17,7 +17,7 @@ import {
   toEditableActivityFields,
   toEditableFields,
 } from './utils/itineraryEdits';
-import { getActivityLand, getLandDisplayName, getLandGroupId } from './utils/landBlocks';
+import { getActivityLand, getLandDisplayName, getLandGroupId, isDifferentKnownParkLand } from './utils/landBlocks';
 import {
   findNextActivity,
   formatDateLabel,
@@ -171,7 +171,19 @@ type TimelineLandGroup = {
   activities: Activity[];
 };
 
-function groupActivitiesByLand(day: TripDay, item: TimelineActivityBlock): TimelineLandGroup[] {
+function getLandGroupOrderValue(groupId: string, index: number, landGroupOrders: Record<string, LandGroupOrder> = {}): number {
+  return landGroupOrders[groupId]?.displayOrder ?? index * 1000;
+}
+
+function sortTimelineLandGroups(groups: TimelineLandGroup[], landGroupOrders: Record<string, LandGroupOrder> = {}): TimelineLandGroup[] {
+  return [...groups].sort((left, right) => {
+    const leftIndex = groups.findIndex((group) => group.groupId === left.groupId);
+    const rightIndex = groups.findIndex((group) => group.groupId === right.groupId);
+    return getLandGroupOrderValue(left.groupId, leftIndex, landGroupOrders) - getLandGroupOrderValue(right.groupId, rightIndex, landGroupOrders) || leftIndex - rightIndex;
+  });
+}
+
+function groupActivitiesByLand(day: TripDay, item: TimelineActivityBlock, landGroupOrders: Record<string, LandGroupOrder> = {}): TimelineLandGroup[] {
   const groups: TimelineLandGroup[] = [];
   const groupPrefix = `${getLandGroupId(day.id, item.id, '').replace(/__land$/, '')}__`;
 
@@ -179,7 +191,7 @@ function groupActivitiesByLand(day: TripDay, item: TimelineActivityBlock): Timel
     const hasStableGroup = activity.landGroupId?.startsWith(groupPrefix);
     const inferredLand = getActivityLand(day.park, item, activity);
     const inferredGroupId = getLandGroupId(day.id, item.id, inferredLand);
-    const hasConflictingStableGroup = Boolean(hasStableGroup && activity.landGroupId && activity.landGroupId !== inferredGroupId);
+    const hasConflictingStableGroup = Boolean(hasStableGroup && activity.landGroupId && activity.landGroupId !== inferredGroupId && isDifferentKnownParkLand(day.park, inferredLand, activity.location));
     const land = hasStableGroup && !hasConflictingStableGroup ? getLandDisplayName(day.park, inferredLand, activity.location) : inferredLand;
     const groupId = hasStableGroup && activity.landGroupId && !hasConflictingStableGroup ? activity.landGroupId : inferredGroupId;
     const existing = groups.find((group) => group.groupId === groupId);
@@ -206,7 +218,7 @@ function groupActivitiesByLand(day: TripDay, item: TimelineActivityBlock): Timel
     groups.push({ groupId: getLandGroupId(day.id, item.id, land), land, activities: [] });
   }
 
-  return groups;
+  return sortTimelineLandGroups(groups, landGroupOrders);
 }
 
 function getDayPresentation(day: TripDay) {
@@ -1737,16 +1749,22 @@ function DeleteItemSheet({
 
 function LandEditorSheet({
   editor,
+  orderState,
   onChange,
   onSave,
   onCancel,
   onDelete,
+  onMoveEarlier,
+  onMoveLater,
 }: {
   editor: LandEditorState;
+  orderState?: { canMoveEarlier: boolean; canMoveLater: boolean };
   onChange: (editor: LandEditorState) => void;
   onSave: () => void;
   onCancel: () => void;
   onDelete: () => void;
+  onMoveEarlier: () => void;
+  onMoveLater: () => void;
 }) {
   const [lightningLanePicker, setLightningLanePicker] = useState<LightningLanePickerState | null>(null);
 
@@ -1904,6 +1922,30 @@ function LandEditorSheet({
             </label>
           ) : null}
         </div>
+
+        {orderState ? (
+          <section className="mt-5 rounded-[1.35rem] border border-white/[0.08] bg-[#111111]/55 p-4">
+            <p className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Order</p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={onMoveEarlier}
+                disabled={!orderState.canMoveEarlier}
+                className="min-h-12 rounded-full border border-[#3A3A3C] bg-[#1C1C1E] px-5 py-2 font-black text-white transition disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]"
+              >
+                Move earlier
+              </button>
+              <button
+                type="button"
+                onClick={onMoveLater}
+                disabled={!orderState.canMoveLater}
+                className="min-h-12 rounded-full border border-[#3A3A3C] bg-[#1C1C1E] px-5 py-2 font-black text-white transition disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]"
+              >
+                Move later
+              </button>
+            </div>
+          </section>
+        ) : null}
 
         <div className="mt-5 space-y-5">
           {visibleActivities.map((activity, index) => (
@@ -2064,6 +2106,7 @@ function FlexibleTimelineItem({
   day,
   item,
   statuses,
+  landGroupOrders,
   onCycleStatus,
   onEditItem,
   onEditLand,
@@ -2071,12 +2114,13 @@ function FlexibleTimelineItem({
   day: TripDay;
   item: TimelineActivityBlock;
   statuses: Record<string, ItemStatus>;
+  landGroupOrders: Record<string, LandGroupOrder>;
   onCycleStatus: (id: string) => void;
   onEditItem: (dayId: string, item: TripItem) => void;
   onEditLand: (day: TripDay, item: TimelineActivityBlock, group: TimelineLandGroup) => void;
 }) {
   const itemStatus = statuses[getItemStatusKey(item)];
-  const groups = groupActivitiesByLand(day, item);
+  const groups = groupActivitiesByLand(day, item, landGroupOrders);
 
   return (
     <article className="py-5">
@@ -2151,40 +2195,108 @@ function FlexibleTimelineItem({
 function DayTimeline({
   day,
   statuses,
+  landGroupOrders,
   onCycleStatus,
   onEditItem,
   onAddItem,
   onEditLand,
+  onBackToDashboard,
 }: {
   day: TripDay;
   statuses: Record<string, ItemStatus>;
+  landGroupOrders: Record<string, LandGroupOrder>;
   onCycleStatus: (id: string) => void;
   onEditItem: (dayId: string, item: TripItem) => void;
   onAddItem: (dayId: string) => void;
   onEditLand: (day: TripDay, item: TimelineActivityBlock, group: TimelineLandGroup) => void;
+  onBackToDashboard?: () => void;
 }) {
+  const sectionRef = useRef<HTMLElement | null>(null);
+  const headerRef = useRef<HTMLElement | null>(null);
+  const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
+
+  useEffect(() => {
+    function updateCollapsedHeader() {
+      const section = sectionRef.current;
+      const header = headerRef.current;
+      if (!section || !header) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sectionRect = section.getBoundingClientRect();
+      const shouldCollapse = headerRect.bottom < 92 && sectionRect.bottom > 160;
+      setIsHeaderCollapsed((current) => (current === shouldCollapse ? current : shouldCollapse));
+    }
+
+    updateCollapsedHeader();
+    window.addEventListener('scroll', updateCollapsedHeader, { passive: true });
+    window.addEventListener('resize', updateCollapsedHeader);
+    return () => {
+      window.removeEventListener('scroll', updateCollapsedHeader);
+      window.removeEventListener('resize', updateCollapsedHeader);
+    };
+  }, [day.id]);
+
   return (
-    <section aria-labelledby={`${day.id}-heading`} className="section-rise px-4 py-8">
-      <div className="glass-surface mb-5 rounded-[1.5rem] px-4 py-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+    <section ref={sectionRef} aria-labelledby={`${day.id}-heading`} className="section-rise px-4 pb-8 pt-3">
+      {onBackToDashboard ? (
+        <div className="sticky top-0 z-30 mb-3 pt-3">
+          <div
+            className={`flex min-h-14 items-center gap-2 rounded-full border border-white/[0.08] bg-[#1C1C1E]/75 px-1.5 py-1.5 shadow-[0_8px_24px_rgba(0,0,0,0.35)] backdrop-blur-xl transition-all duration-200 ${
+              isHeaderCollapsed ? 'w-full' : 'w-14'
+            }`}
+          >
+            <button
+              type="button"
+              onClick={onBackToDashboard}
+              className="ios-icon-button min-h-11 min-w-11 shadow-none"
+              aria-label="Back to dashboard"
+              title="Back to dashboard"
+            >
+              <LucideIcon name="chevron-left" size={24} />
+            </button>
+            <p
+              className={`min-w-0 flex-1 truncate text-[15px] font-black text-white transition-opacity duration-200 ${
+                isHeaderCollapsed ? 'opacity-100' : 'pointer-events-none opacity-0'
+              }`}
+              aria-hidden={!isHeaderCollapsed}
+            >
+              {day.label}
+            </p>
+            <button
+              type="button"
+              onClick={() => onAddItem(day.id)}
+              className={`ios-icon-button min-h-11 min-w-11 shadow-none transition-opacity duration-200 ${
+                isHeaderCollapsed ? 'opacity-100' : 'pointer-events-none opacity-0'
+              }`}
+              aria-label="Add item"
+              title="Add item"
+              tabIndex={isHeaderCollapsed ? 0 : -1}
+              aria-hidden={!isHeaderCollapsed}
+            >
+              <LucideIcon name="plus" size={20} />
+            </button>
+          </div>
+        </div>
+      ) : null}
+      <header ref={headerRef} className="mb-8 border-b border-[#2C2C2E]/70 pb-7">
+        <div className="flex items-start justify-between gap-5">
           <div>
             <p className="text-[12px] font-black uppercase tracking-[0.16em] text-[#0A84FF]">{formatDateLabel(day.date)}</p>
-            <h2 id={`${day.id}-heading`} className="mt-2 text-[26px] font-black leading-tight text-white">
+            <h2 id={`${day.id}-heading`} className="mt-3 text-[32px] font-black leading-[1.02] text-white sm:text-[38px]">
               {day.label}
             </h2>
-            <p className="mt-1 text-[15px] font-semibold text-[#A1A1A6]">{day.park}</p>
           </div>
           <button
             type="button"
             onClick={() => onAddItem(day.id)}
-            className="ios-icon-button"
+            className="ios-icon-button mt-1 min-h-12 min-w-12 border-white/15 bg-[#1C1C1E]/85"
             aria-label="Add item"
             title="Add item"
           >
-            <LucideIcon name="plus" size={20} />
+            <LucideIcon name="plus" size={24} />
           </button>
         </div>
-      </div>
+      </header>
       <div className="divide-y divide-[#2C2C2E]/70">
         {day.items.map((item) =>
           hasTimelineActivityBlock(item) ? (
@@ -2193,6 +2305,7 @@ function DayTimeline({
               day={day}
               item={item}
               statuses={statuses}
+              landGroupOrders={landGroupOrders}
               onCycleStatus={onCycleStatus}
               onEditItem={onEditItem}
               onEditLand={onEditLand}
@@ -2214,23 +2327,37 @@ function DayTimeline({
 
 function AllDaysScreen({
   statuses,
+  landGroupOrders,
   onCycleStatus,
   days,
   onEditItem,
   onAddItem,
   onEditLand,
+  onBackToDashboard,
 }: {
   statuses: Record<string, ItemStatus>;
+  landGroupOrders: Record<string, LandGroupOrder>;
   onCycleStatus: (id: string) => void;
   days: TripDay[];
   onEditItem: (dayId: string, item: TripItem) => void;
   onAddItem: (dayId: string) => void;
   onEditLand: (day: TripDay, item: TimelineActivityBlock, group: TimelineLandGroup) => void;
+  onBackToDashboard?: () => void;
 }) {
   return (
     <main className="screen-fade pt-2">
       {days.map((day) => (
-        <DayTimeline key={day.id} day={day} statuses={statuses} onCycleStatus={onCycleStatus} onEditItem={onEditItem} onAddItem={onAddItem} onEditLand={onEditLand} />
+        <DayTimeline
+          key={day.id}
+          day={day}
+          statuses={statuses}
+          landGroupOrders={landGroupOrders}
+          onCycleStatus={onCycleStatus}
+          onEditItem={onEditItem}
+          onAddItem={onAddItem}
+          onEditLand={onEditLand}
+          onBackToDashboard={days.length === 1 ? onBackToDashboard : undefined}
+        />
       ))}
     </main>
   );
@@ -2370,8 +2497,9 @@ export default function App() {
         tripStorage.addedActivities,
         tripStorage.deletedActivityIds,
         tripStorage.deletedLandGroupIds,
+        tripStorage.landGroupOrders,
       ),
-    [tripStorage.activityEdits, tripStorage.addedActivities, tripStorage.addedItems, tripStorage.deletedActivityIds, tripStorage.deletedItemIds, tripStorage.deletedLandGroupIds, tripStorage.itemEdits],
+    [tripStorage.activityEdits, tripStorage.addedActivities, tripStorage.addedItems, tripStorage.deletedActivityIds, tripStorage.deletedItemIds, tripStorage.deletedLandGroupIds, tripStorage.itemEdits, tripStorage.landGroupOrders],
   );
   const reservations = useMemo(() => getReservations(tripDays), [tripDays]);
   const attentionItems = useMemo(() => getAttentionItems(tripDays), [tripDays]);
@@ -2560,6 +2688,83 @@ export default function App() {
           displayOrder: item.activities.findIndex((candidate) => candidate.id === activity.id),
         },
       })),
+    });
+  }
+
+  function getLandEditorOrderState() {
+    if (!landEditor) return undefined;
+
+    const day = tripDays.find((tripDay) => tripDay.id === landEditor.dayId);
+    const item = day?.items.find((candidate): candidate is TimelineActivityBlock => candidate.id === landEditor.parentItem.id && hasTimelineActivityBlock(candidate));
+    if (!day || !item) return undefined;
+
+    const groups = groupActivitiesByLand(day, item, tripStorage.landGroupOrders);
+    const index = groups.findIndex((group) => group.groupId === landEditor.groupId);
+    if (index >= 0 && groups.length > 1) {
+      return {
+        scope: 'group' as const,
+        canMoveEarlier: index > 0,
+        canMoveLater: index < groups.length - 1,
+        groups,
+        index,
+      };
+    }
+
+    const timelineUnits = day.items.map((candidate, itemIndex) => {
+      const candidateGroups = hasTimelineActivityBlock(candidate) ? groupActivitiesByLand(day, candidate, tripStorage.landGroupOrders) : [];
+      const singleGroup = candidateGroups.length === 1 ? candidateGroups[0] : undefined;
+      return {
+        itemId: candidate.id,
+        groupId: singleGroup?.groupId,
+        order: singleGroup ? getLandGroupOrderValue(singleGroup.groupId, itemIndex, tripStorage.landGroupOrders) : itemIndex * 1000,
+      };
+    });
+    const timelineIndex = timelineUnits.findIndex((unit) => unit.groupId === landEditor.groupId || unit.itemId === landEditor.parentItem.id);
+
+    return {
+      scope: 'timeline' as const,
+      canMoveEarlier: timelineIndex > 0,
+      canMoveLater: timelineIndex >= 0 && timelineIndex < timelineUnits.length - 1,
+      timelineUnits,
+      index: timelineIndex,
+    };
+  }
+
+  function moveLandEditorGroup(direction: -1 | 1) {
+    if (!landEditor) return;
+
+    const orderState = getLandEditorOrderState();
+    if (!orderState || orderState.index < 0) return;
+
+    const units = orderState.scope === 'group' ? orderState.groups.map((group, index) => ({
+      id: group.groupId,
+      order: getLandGroupOrderValue(group.groupId, index, tripStorage.landGroupOrders),
+    })) : orderState.timelineUnits.map((unit, index) => ({
+      id: unit.groupId ?? unit.itemId,
+      order: unit.order,
+      index,
+    }));
+    const { index } = orderState;
+    if (direction < 0 && index === 0) return;
+    if (direction > 0 && index === units.length - 1) return;
+
+    const targetIndex = direction < 0 ? index - 1 : index + 1;
+    const lowerNeighborIndex = direction < 0 ? targetIndex - 1 : targetIndex;
+    const upperNeighborIndex = direction < 0 ? targetIndex : targetIndex + 1;
+    const lowerOrder =
+      lowerNeighborIndex >= 0
+        ? units[lowerNeighborIndex].order
+        : units[targetIndex].order - 1000;
+    const upperOrder =
+      upperNeighborIndex < units.length
+        ? units[upperNeighborIndex].order
+        : units[targetIndex].order + 1000;
+    const displayOrder = (lowerOrder + upperOrder) / 2;
+
+    tripStorage.saveLandGroupOrder(landEditor.groupId, {
+      dayId: landEditor.dayId,
+      parentItemId: landEditor.parentItem.id,
+      displayOrder,
     });
   }
 
@@ -2764,7 +2969,7 @@ export default function App() {
         className="pointer-events-none fixed inset-0 z-[1] bg-[linear-gradient(to_bottom,rgba(0,0,0,0.12),rgba(0,0,0,0.38))]"
       />
       <div key={`${activeTab}-${selectedDayId ?? 'all'}`} className={`screen-fade relative z-10 mx-auto max-w-4xl ${phase === 'before' ? 'pb-8' : 'pb-20'}`}>
-        {phase === 'before' && activeTab !== 'today' ? (
+        {phase === 'before' && activeTab !== 'today' && activeTab !== 'days' ? (
           <div className="sticky top-0 z-20 px-4 pb-2 pt-3 backdrop-blur-sm">
             <button
               type="button"
@@ -2795,10 +3000,12 @@ export default function App() {
           <AllDaysScreen
             days={timelineDays}
             statuses={tripStorage.statuses}
+            landGroupOrders={tripStorage.landGroupOrders}
             onCycleStatus={tripStorage.cycleStatus}
             onEditItem={openEditItem}
             onAddItem={openAddItem}
             onEditLand={openLandEditor}
+            onBackToDashboard={selectedTimelineDay ? openDashboard : undefined}
           />
         ) : null}
         {activeTab === 'attention' ? <AttentionScreen statuses={tripStorage.statuses} attentionItems={attentionItems} onEditItem={openEditItem} /> : null}
@@ -2843,10 +3050,13 @@ export default function App() {
       {landEditor ? (
         <LandEditorSheet
           editor={landEditor}
+          orderState={getLandEditorOrderState()}
           onChange={setLandEditor}
           onSave={saveLandEditor}
           onCancel={() => setLandEditor(null)}
           onDelete={requestLandDeleteFromEditor}
+          onMoveEarlier={() => moveLandEditorGroup(-1)}
+          onMoveLater={() => moveLandEditorGroup(1)}
         />
       ) : null}
       {landDelete ? (

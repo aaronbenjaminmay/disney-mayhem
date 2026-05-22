@@ -1,4 +1,4 @@
-import type { Activity, EditableActivityFields, EditableItemFields, ItemStatus, TripItem } from '../types';
+import type { Activity, EditableActivityFields, EditableItemFields, ItemStatus, LandGroupOrder, TripItem } from '../types';
 import { createItemFromFields } from '../utils/itineraryEdits';
 import { supabase, tripId } from './supabaseClient';
 
@@ -12,7 +12,7 @@ type TripEditRow = {
   updated_at?: string | null;
   payload?: {
     status?: ItemStatus;
-    action?: 'edit' | 'add' | 'delete' | 'delete-land-group';
+    action?: 'edit' | 'add' | 'delete' | 'delete-land-group' | 'order-land-group';
     groupId?: string;
     landGroupId?: string;
     parentItemId?: string;
@@ -23,6 +23,7 @@ type TripEditRow = {
     itemFields?: EditableItemFields;
     activityId?: string;
     activityIds?: string[];
+    landGroupOrder?: LandGroupOrder;
     saved_at?: string;
   } | null;
 };
@@ -33,6 +34,7 @@ export type SupabaseStatusEdits = {
   addedActivities: Record<string, Activity[]>;
   deletedActivityIds: string[];
   deletedLandGroupIds: string[];
+  landGroupOrders: Record<string, LandGroupOrder>;
   itemEdits: Record<string, EditableItemFields>;
   addedItems: Record<string, TripItem[]>;
   deletedItemIds: string[];
@@ -83,6 +85,7 @@ export async function fetchSupabaseStatusEdits(sinceUpdatedAt?: string | null): 
   const addedActivities: Record<string, Activity[]> = {};
   const deletedActivityIds: string[] = [];
   const deletedLandGroupIds: string[] = [];
+  const landGroupOrders: Record<string, LandGroupOrder> = {};
   const itemEdits: Record<string, EditableItemFields> = {};
   const addedItems: Record<string, TripItem[]> = {};
   const deletedItemIds: string[] = [];
@@ -148,6 +151,10 @@ export async function fetchSupabaseStatusEdits(sinceUpdatedAt?: string | null): 
       if (groupId) deletedLandGroupIds.push(groupId);
       row.payload.activityIds?.forEach((activityId) => deletedActivityIds.push(activityId));
     }
+    if (row.type === activityEditType && row.payload?.action === 'order-land-group' && (row.payload.landGroupId || row.payload.groupId || row.item_id) && row.payload.landGroupOrder) {
+      const groupId = row.payload.landGroupId ?? row.payload.groupId ?? row.item_id;
+      if (groupId) landGroupOrders[groupId] = row.payload.landGroupOrder;
+    }
     if (row.type === itemEditType && row.item_id && row.payload?.action === 'edit' && row.payload.itemFields) {
       itemEdits[row.item_id] = row.payload.itemFields;
       if (row.item_id.startsWith('local-')) {
@@ -182,6 +189,7 @@ export async function fetchSupabaseStatusEdits(sinceUpdatedAt?: string | null): 
     addedActivities,
     deletedActivityIds,
     deletedLandGroupIds,
+    landGroupOrders,
     itemEdits,
     addedItems,
     deletedItemIds,
@@ -326,6 +334,17 @@ export async function saveSupabaseLandGroupDelete(groupId: string, parentItemId:
     parentItemId,
     dayId,
     activityIds,
+  });
+}
+
+export async function saveSupabaseLandGroupOrder(groupId: string, order: LandGroupOrder): Promise<void> {
+  await saveSupabaseActivityRow(groupId, {
+    action: 'order-land-group',
+    groupId,
+    landGroupId: groupId,
+    parentItemId: order.parentItemId,
+    dayId: order.dayId,
+    landGroupOrder: order,
   });
 }
 

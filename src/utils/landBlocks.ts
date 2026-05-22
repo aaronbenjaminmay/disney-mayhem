@@ -1,4 +1,4 @@
-import type { Activity, LandBlock, LandBlockActivity, ParkName, ScheduledItem, TripDay, TripItem } from '../types';
+import type { Activity, LandBlock, LandBlockActivity, LandGroupOrder, ParkName, ScheduledItem, TripDay, TripItem } from '../types';
 
 type ActivityBlock = TripItem & {
   activities: Activity[];
@@ -40,6 +40,28 @@ export function getLandDisplayName(park: ParkName, inferredLand: string, savedLo
   const savedIsDifferentKnownLand = parkLandNames[park]?.some((land) => slugifyLandGroupPart(land) === savedSlug) && savedSlug !== inferredSlug;
 
   return savedIsDifferentKnownLand ? inferredLand : savedLocation;
+}
+
+export function isDifferentKnownParkLand(park: ParkName, inferredLand: string, savedLocation?: string): boolean {
+  if (!savedLocation) return false;
+
+  const savedSlug = slugifyLandGroupPart(savedLocation);
+  const inferredSlug = slugifyLandGroupPart(inferredLand);
+  return parkLandNames[park]?.some((land) => slugifyLandGroupPart(land) === savedSlug) && savedSlug !== inferredSlug;
+}
+
+function getLandGroupDisplayOrder(groupId: string, index: number, landGroupOrders: Record<string, LandGroupOrder> = {}): number {
+  return landGroupOrders[groupId]?.displayOrder ?? index * 1000;
+}
+
+function sortLandBlocks<T extends { id: string }>(blocks: T[], landGroupOrders: Record<string, LandGroupOrder> = {}): T[] {
+  return [...blocks].sort((left, right) => {
+    const leftIndex = blocks.findIndex((block) => block.id === left.id);
+    const rightIndex = blocks.findIndex((block) => block.id === right.id);
+    const leftOrder = getLandGroupDisplayOrder(left.id, leftIndex, landGroupOrders);
+    const rightOrder = getLandGroupDisplayOrder(right.id, rightIndex, landGroupOrders);
+    return leftOrder - rightOrder || leftIndex - rightIndex;
+  });
 }
 
 export function getActivityLand(park: ParkName, block: ActivityBlock, activity: Activity): string {
@@ -127,7 +149,7 @@ function hasActivityBlock(item: TripItem): item is ActivityBlock {
   return 'activities' in item && Array.isArray(item.activities);
 }
 
-export function buildLandBlocks(day: TripDay, items: TripItem[] = day.items): LandBlock[] {
+export function buildLandBlocks(day: TripDay, items: TripItem[] = day.items, landGroupOrders: Record<string, LandGroupOrder> = {}): LandBlock[] {
   const blocks = new Map<string, LandBlock>();
 
   items
@@ -155,7 +177,7 @@ export function buildLandBlocks(day: TripDay, items: TripItem[] = day.items): La
         const hasStableGroup = activity.landGroupId?.startsWith(groupPrefix);
         const inferredLand = getActivityLand(day.park, block, activity);
         const inferredGroupId = getLandGroupId(day.id, block.id, inferredLand);
-        const hasConflictingStableGroup = Boolean(hasStableGroup && activity.landGroupId && activity.landGroupId !== inferredGroupId);
+        const hasConflictingStableGroup = Boolean(hasStableGroup && activity.landGroupId && activity.landGroupId !== inferredGroupId && isDifferentKnownParkLand(day.park, inferredLand, activity.location));
         const land = hasStableGroup && !hasConflictingStableGroup ? getLandDisplayName(day.park, inferredLand, activity.location) : inferredLand;
         const groupId = hasStableGroup && activity.landGroupId && !hasConflictingStableGroup ? activity.landGroupId : inferredGroupId;
         const existing =
@@ -177,13 +199,13 @@ export function buildLandBlocks(day: TripDay, items: TripItem[] = day.items): La
       });
     });
 
-  return [...blocks.values()];
+  return sortLandBlocks([...blocks.values()], landGroupOrders);
 }
 
-export function withTripDayGroups(day: TripDay): TripDay {
+export function withTripDayGroups(day: TripDay, landGroupOrders: Record<string, LandGroupOrder> = {}): TripDay {
   return {
     ...day,
     scheduledItems: day.items.filter((item): item is ScheduledItem => item.type === 'scheduled'),
-    landBlocks: buildLandBlocks(day),
+    landBlocks: buildLandBlocks(day, day.items, landGroupOrders),
   };
 }
