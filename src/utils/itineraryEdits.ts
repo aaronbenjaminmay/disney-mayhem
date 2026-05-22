@@ -1,5 +1,5 @@
 import type { Activity, EditableActivityFields, EditableItemFields, ReservationItem, ScheduledItem, TripDay, TripItem } from '../types';
-import { withTripDayGroups } from './landBlocks';
+import { slugifyLandGroupPart, withTripDayGroups } from './landBlocks';
 import { getItemStart } from './time';
 
 const warnedPersistenceIds = new Set<string>();
@@ -127,6 +127,7 @@ function getItemTargetDayId(item: TripItem, sourceDayId: string, fields?: Editab
 
 export function toEditableActivityFields(activity: Activity): EditableActivityFields {
   return {
+    landGroupId: activity.landGroupId,
     title: activity.title,
     location: activity.location,
     notes: activity.notes ?? '',
@@ -144,6 +145,7 @@ export function toEditableActivityFields(activity: Activity): EditableActivityFi
 export function createActivityFromFields(id: string, fields: EditableActivityFields): Activity {
   return {
     id,
+    landGroupId: fields.landGroupId,
     title: fields.title.trim(),
     location: fields.location.trim(),
     notes: fields.notes?.trim() || undefined,
@@ -165,10 +167,19 @@ function applyActivityEdits(
   deletedActivityIds: Set<string>,
 ): TripItem {
   if (!('activities' in item) || !Array.isArray(item.activities)) return item;
+  const parentGroupMarker = `__${slugifyLandGroupPart(item.id)}__`;
+  const groupedAddedActivities = Object.entries(addedActivities)
+    .filter(([groupId]) => groupId !== item.id && groupId.includes(parentGroupMarker))
+    .flatMap(([, activities]) => activities);
 
   const activities = [
-    ...item.activities.filter((activity) => !deletedActivityIds.has(activity.id)),
-    ...(addedActivities[item.id] ?? []).filter((activity) => !deletedActivityIds.has(activity.id)),
+    ...new Map(
+      [
+        ...item.activities.filter((activity) => !deletedActivityIds.has(activity.id)),
+        ...(addedActivities[item.id] ?? []).filter((activity) => !deletedActivityIds.has(activity.id)),
+        ...groupedAddedActivities.filter((activity) => !deletedActivityIds.has(activity.id)),
+      ].map((activity) => [activity.id, activity]),
+    ).values(),
   ]
     .map((activity) => {
       const fields = activityEdits[activity.id];
@@ -234,7 +245,9 @@ export function mergeTripEdits(
   });
 
   Object.entries(addedActivities).forEach(([parentItemId, activities]) => {
-    if (!knownItemIds.has(parentItemId)) {
+    const targetsKnownParent = knownItemIds.has(parentItemId);
+    const targetsKnownGroup = [...knownItemIds].some((itemId) => parentItemId.includes(`__${slugifyLandGroupPart(itemId)}__`));
+    if (!targetsKnownParent && !targetsKnownGroup) {
       warnUnknownPersistenceReference('added activity parent item', parentItemId);
     }
 

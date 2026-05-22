@@ -22,6 +22,7 @@ export type ScheduledCategory =
 
 export type Activity = {
   id: string;
+  landGroupId?: string;
   title: string;
   location: string;
   notes?: string;
@@ -135,6 +136,7 @@ export type EditableItemFields = {
 };
 
 export type EditableActivityFields = {
+  landGroupId?: string;
   title: string;
   location: string;
   notes?: string;

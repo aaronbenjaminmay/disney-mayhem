@@ -12,6 +12,8 @@ type TripEditRow = {
   payload?: {
     status?: ItemStatus;
     action?: 'edit' | 'add' | 'delete';
+    groupId?: string;
+    landGroupId?: string;
     parentItemId?: string;
     dayId?: string;
     activity?: Activity;
@@ -91,12 +93,24 @@ export async function fetchSupabaseStatusEdits(sinceUpdatedAt?: string | null): 
     if (row.type === statusEditType && row.item_id && isItemStatus(status)) {
       statuses[row.item_id] = status;
     }
+    if (row.type === activityEditType && row.item_id && !row.payload?.landGroupId && !row.payload?.groupId) {
+      console.warn('Disney Mayhem persistence warning: legacy ride edit has no land group ID', {
+        item_id: row.item_id,
+        action: row.payload?.action,
+        parentItemId: row.payload?.parentItemId,
+      });
+    }
     if (row.type === activityEditType && row.item_id && row.payload?.action === 'edit' && row.payload.fields) {
-      activityEdits[row.item_id] = row.payload.fields;
-      if (row.item_id.startsWith('local-activity-') && row.payload.parentItemId) {
-        const fields = row.payload.fields;
+      const activityGroupKey = row.payload.landGroupId ?? row.payload.groupId ?? row.payload.parentItemId;
+      activityEdits[row.item_id] = {
+        ...row.payload.fields,
+        landGroupId: row.payload.fields.landGroupId ?? row.payload.landGroupId ?? row.payload.groupId,
+      };
+      if (row.item_id.startsWith('local-activity-') && activityGroupKey) {
+        const fields = activityEdits[row.item_id];
         const activity: Activity = {
           id: row.item_id,
+          landGroupId: row.payload.landGroupId ?? row.payload.groupId,
           title: fields.title,
           location: fields.location,
           notes: fields.notes || undefined,
@@ -109,11 +123,18 @@ export async function fetchSupabaseStatusEdits(sinceUpdatedAt?: string | null): 
           lightningLaneLabel: fields.lightningLaneLabel || undefined,
           displayOrder: fields.displayOrder,
         };
-        addedActivities[row.payload.parentItemId] = [...(addedActivities[row.payload.parentItemId] ?? []), activity];
+        addedActivities[activityGroupKey] = [...(addedActivities[activityGroupKey] ?? []), activity];
       }
     }
     if (row.type === activityEditType && row.payload?.action === 'add' && row.payload.parentItemId && row.payload.activity) {
-      addedActivities[row.payload.parentItemId] = [...(addedActivities[row.payload.parentItemId] ?? []), row.payload.activity];
+      const activityGroupKey = row.payload.landGroupId ?? row.payload.groupId ?? row.payload.parentItemId;
+      addedActivities[activityGroupKey] = [
+        ...(addedActivities[activityGroupKey] ?? []),
+        {
+          ...row.payload.activity,
+          landGroupId: row.payload.activity.landGroupId ?? row.payload.landGroupId ?? row.payload.groupId,
+        },
+      ];
     }
     if (row.type === activityEditType && row.item_id && row.payload?.action === 'delete') {
       deletedActivityIds.push(row.item_id);
@@ -232,30 +253,42 @@ async function saveSupabaseActivityRow(itemId: string, payload: NonNullable<Trip
   console.log('Supabase ride edit saved', { item_id: itemId, type: activityEditType, payload: row.payload });
 }
 
-export async function saveSupabaseActivityEdit(activityId: string, parentItemId: string, dayId: string, fields: EditableActivityFields): Promise<void> {
+export async function saveSupabaseActivityEdit(activityId: string, parentItemId: string, dayId: string, fields: EditableActivityFields, groupId?: string): Promise<void> {
   await saveSupabaseActivityRow(activityId, {
     action: 'edit',
     activityId,
+    groupId,
+    landGroupId: groupId,
     parentItemId,
     dayId,
-    fields,
+    fields: {
+      ...fields,
+      landGroupId: groupId ?? fields.landGroupId,
+    },
   });
 }
 
-export async function saveSupabaseActivityAdd(parentItemId: string, dayId: string, activity: Activity): Promise<void> {
+export async function saveSupabaseActivityAdd(parentItemId: string, dayId: string, activity: Activity, groupId?: string): Promise<void> {
   await saveSupabaseActivityRow(activity.id, {
     action: 'add',
     activityId: activity.id,
+    groupId,
+    landGroupId: groupId,
     parentItemId,
     dayId,
-    activity,
+    activity: {
+      ...activity,
+      landGroupId: groupId ?? activity.landGroupId,
+    },
   });
 }
 
-export async function saveSupabaseActivityDelete(activityId: string, parentItemId: string, dayId: string): Promise<void> {
+export async function saveSupabaseActivityDelete(activityId: string, parentItemId: string, dayId: string, groupId?: string): Promise<void> {
   await saveSupabaseActivityRow(activityId, {
     action: 'delete',
     activityId,
+    groupId,
+    landGroupId: groupId,
     parentItemId,
     dayId,
   });

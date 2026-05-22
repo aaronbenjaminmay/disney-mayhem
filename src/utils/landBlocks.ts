@@ -9,6 +9,20 @@ function includesAny(text: string, values: string[]) {
   return values.some((value) => text.includes(value));
 }
 
+export function slugifyLandGroupPart(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/['’]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+export function getLandGroupId(dayId: string, parentTimelineItemId: string, landName: string): string {
+  return `${slugifyLandGroupPart(dayId)}__${slugifyLandGroupPart(parentTimelineItemId)}__${slugifyLandGroupPart(landName) || 'land'}`;
+}
+
 export function getActivityLand(park: ParkName, block: ActivityBlock, activity: Activity): string {
   const text = `${activity.title} ${activity.location} ${activity.notes ?? ''}`.toLowerCase();
   const fallbackText = `${block.area} ${block.location}`.toLowerCase();
@@ -102,9 +116,10 @@ export function buildLandBlocks(day: TripDay, items: TripItem[] = day.items): La
     .forEach((block) => {
       if (block.activities.length === 0) {
         const land = block.area || block.location;
-        if (!blocks.has(land)) {
-          blocks.set(land, {
-            id: `${day.id}-${land.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+        const groupId = getLandGroupId(day.id, block.id, land);
+        if (!blocks.has(groupId)) {
+          blocks.set(groupId, {
+            id: groupId,
             land,
             activities: [],
             sourceItemIds: [block.id],
@@ -117,11 +132,14 @@ export function buildLandBlocks(day: TripDay, items: TripItem[] = day.items): La
       }
 
       block.activities.forEach((activity) => {
-        const land = getActivityLand(day.park, block, activity);
+        const groupPrefix = `${getLandGroupId(day.id, block.id, '').replace(/__land$/, '')}__`;
+        const hasStableGroup = activity.landGroupId?.startsWith(groupPrefix);
+        const land = hasStableGroup ? activity.location || getActivityLand(day.park, block, activity) : getActivityLand(day.park, block, activity);
+        const groupId = hasStableGroup && activity.landGroupId ? activity.landGroupId : getLandGroupId(day.id, block.id, land);
         const existing =
-          blocks.get(land) ??
+          blocks.get(groupId) ??
           ({
-            id: `${day.id}-${land.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+            id: groupId,
             land,
             activities: [],
             sourceItemIds: [],
@@ -133,7 +151,7 @@ export function buildLandBlocks(day: TripDay, items: TripItem[] = day.items): La
         existing.endTime = block.endTime ?? existing.endTime;
         existing.notes = existing.notes ?? block.notes;
         existing.needsAttention = existing.needsAttention || block.needsAttention;
-        blocks.set(land, existing);
+        blocks.set(groupId, existing);
       });
     });
 

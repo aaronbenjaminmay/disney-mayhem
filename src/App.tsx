@@ -17,7 +17,7 @@ import {
   toEditableActivityFields,
   toEditableFields,
 } from './utils/itineraryEdits';
-import { getActivityLand } from './utils/landBlocks';
+import { getActivityLand, getLandGroupId } from './utils/landBlocks';
 import {
   findNextActivity,
   formatDateLabel,
@@ -88,7 +88,9 @@ function getActiveLandBlock(day: TripDay, activeItem: TripItem | undefined, stat
   if (!activity) return day.landBlocks?.find((block) => block.sourceItemIds.includes(activeItem.id));
 
   const land = getActivityLand(day.park, activeItem, activity);
-  return day.landBlocks?.find((block) => block.land === land);
+  const groupPrefix = `${getLandGroupId(day.id, activeItem.id, '').replace(/__land$/, '')}__`;
+  const groupId = activity.landGroupId?.startsWith(groupPrefix) ? activity.landGroupId : getLandGroupId(day.id, activeItem.id, land);
+  return day.landBlocks?.find((block) => block.id === groupId);
 }
 
 function getUpcomingLandBlocks(day: TripDay, activeLand?: LandBlock): LandBlock[] {
@@ -161,23 +163,33 @@ function addMinutesToTime(time: string, minutesToAdd: number): string {
 
 const lightningLaneDurationOptions = [30, 60, 90, 120];
 
-function groupActivitiesByLand(day: TripDay, item: TimelineActivityBlock) {
-  const groups: { land: string; activities: Activity[] }[] = [];
+type TimelineLandGroup = {
+  groupId: string;
+  land: string;
+  activities: Activity[];
+};
+
+function groupActivitiesByLand(day: TripDay, item: TimelineActivityBlock): TimelineLandGroup[] {
+  const groups: TimelineLandGroup[] = [];
+  const groupPrefix = `${getLandGroupId(day.id, item.id, '').replace(/__land$/, '')}__`;
 
   item.activities.forEach((activity) => {
-    const land = getActivityLand(day.park, item, activity);
-    const existing = groups.find((group) => group.land === land);
+    const hasStableGroup = activity.landGroupId?.startsWith(groupPrefix);
+    const land = hasStableGroup ? activity.location || getActivityLand(day.park, item, activity) : getActivityLand(day.park, item, activity);
+    const groupId = hasStableGroup && activity.landGroupId ? activity.landGroupId : getLandGroupId(day.id, item.id, land);
+    const existing = groups.find((group) => group.groupId === groupId);
 
     if (existing) {
       existing.activities.push(activity);
       return;
     }
 
-    groups.push({ land, activities: [activity] });
+    groups.push({ groupId, land, activities: [activity] });
   });
 
   if (groups.length === 0) {
-    groups.push({ land: item.area || item.location, activities: [] });
+    const land = item.area || item.location;
+    groups.push({ groupId: getLandGroupId(day.id, item.id, land), land, activities: [] });
   }
 
   return groups;
@@ -1030,6 +1042,7 @@ type LandEditorActivity = {
 
 type LandEditorState = {
   dayId: string;
+  groupId: string;
   parentItem: TimelineActivityBlock;
   land: string;
   activities: LandEditorActivity[];
@@ -1297,7 +1310,7 @@ function LandEditorSheet({
   }
 
   function addActivity() {
-    const id = `local-activity-${editor.parentItem.id}-${Date.now()}`;
+    const id = `local-activity-${editor.groupId}-${Date.now()}`;
     onChange({
       ...editor,
       activities: [
@@ -1306,6 +1319,7 @@ function LandEditorSheet({
           id,
           isNew: true,
           draft: {
+            landGroupId: editor.groupId,
             title: '',
             location: editor.land,
             notes: '',
@@ -1564,7 +1578,7 @@ function FlexibleTimelineItem({
   statuses: Record<string, ItemStatus>;
   onCycleStatus: (id: string) => void;
   onEditItem: (dayId: string, item: TripItem) => void;
-  onEditLand: (day: TripDay, item: TimelineActivityBlock, land: string, activities: Activity[]) => void;
+  onEditLand: (day: TripDay, item: TimelineActivityBlock, group: TimelineLandGroup) => void;
 }) {
   const itemStatus = statuses[getItemStatusKey(item)];
   const groups = groupActivitiesByLand(day, item);
@@ -1594,12 +1608,12 @@ function FlexibleTimelineItem({
 
       <div className="mt-6 space-y-7">
         {groups.map((group) => (
-          <section key={`${item.id}-${group.land}`} aria-label={`${item.title} ${group.land}`} className="glass-surface rounded-[1.35rem] px-4 py-4">
+          <section key={group.groupId} aria-label={`${item.title} ${group.land}`} className="glass-surface rounded-[1.35rem] px-4 py-4">
             <div className="flex items-center justify-between gap-3">
               <h4 className="text-[13px] font-black uppercase tracking-[0.18em] text-white">{group.land}</h4>
               <button
                 type="button"
-                onClick={() => onEditLand(day, item, group.land, group.activities)}
+                onClick={() => onEditLand(day, item, group)}
                 className="ios-icon-button"
                 aria-label="Edit"
                 title={`Edit ${group.land}`}
@@ -1652,7 +1666,7 @@ function DayTimeline({
   onCycleStatus: (id: string) => void;
   onEditItem: (dayId: string, item: TripItem) => void;
   onAddItem: (dayId: string) => void;
-  onEditLand: (day: TripDay, item: TimelineActivityBlock, land: string, activities: Activity[]) => void;
+  onEditLand: (day: TripDay, item: TimelineActivityBlock, group: TimelineLandGroup) => void;
 }) {
   return (
     <section aria-labelledby={`${day.id}-heading`} className="section-rise px-4 py-8">
@@ -1716,7 +1730,7 @@ function AllDaysScreen({
   days: TripDay[];
   onEditItem: (dayId: string, item: TripItem) => void;
   onAddItem: (dayId: string) => void;
-  onEditLand: (day: TripDay, item: TimelineActivityBlock, land: string, activities: Activity[]) => void;
+  onEditLand: (day: TripDay, item: TimelineActivityBlock, group: TimelineLandGroup) => void;
 }) {
   return (
     <main className="screen-fade pt-2">
@@ -1940,12 +1954,13 @@ export default function App() {
     });
   }
 
-  function openLandEditor(day: TripDay, item: TimelineActivityBlock, land: string, activities: Activity[]) {
+  function openLandEditor(day: TripDay, item: TimelineActivityBlock, group: TimelineLandGroup) {
     setLandEditor({
       dayId: day.id,
+      groupId: group.groupId,
       parentItem: item,
-      land,
-      activities: activities.map((activity) => ({
+      land: group.land,
+      activities: group.activities.map((activity) => ({
         id: activity.id,
         draft: {
           ...toEditableActivityFields(activity),
@@ -1992,13 +2007,14 @@ export default function App() {
 
     landEditor.activities.forEach((activity) => {
       if (activity.removed) {
-        if (!activity.isNew) tripStorage.deleteActivity(landEditor.dayId, landEditor.parentItem.id, activity.id);
+        if (!activity.isNew) tripStorage.deleteActivity(landEditor.dayId, landEditor.parentItem.id, activity.id, landEditor.groupId);
         return;
       }
 
       const currentIndex = visibleActivities.findIndex((candidate) => candidate.id === activity.id);
       const draft = {
         ...activity.draft,
+        landGroupId: landEditor.groupId,
         title: activity.draft.title.trim(),
         location: activity.draft.location.trim() || landEditor.land,
         time: '',
@@ -2011,6 +2027,7 @@ export default function App() {
 
       console.log('Ride edit payload saved', {
         dayId: landEditor.dayId,
+        groupId: landEditor.groupId,
         parentItemId: landEditor.parentItem.id,
         activityId: activity.id,
         action: activity.isNew ? 'add' : 'edit',
@@ -2018,9 +2035,9 @@ export default function App() {
       });
 
       if (activity.isNew) {
-        tripStorage.addActivity(landEditor.dayId, landEditor.parentItem.id, savedActivity);
+        tripStorage.addActivity(landEditor.dayId, landEditor.parentItem.id, savedActivity, landEditor.groupId);
       } else {
-        tripStorage.saveActivityEdit(landEditor.dayId, landEditor.parentItem.id, activity.id, draft);
+        tripStorage.saveActivityEdit(landEditor.dayId, landEditor.parentItem.id, activity.id, draft, landEditor.groupId);
       }
     });
 

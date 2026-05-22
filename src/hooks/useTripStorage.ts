@@ -219,32 +219,40 @@ export function useTripStorage() {
         }));
         void saveSupabaseItemDelete(id);
       },
-      saveActivityEdit(dayId: string, parentItemId: string, activityId: string, fields: EditableActivityFields) {
+      saveActivityEdit(dayId: string, parentItemId: string, activityId: string, fields: EditableActivityFields, groupId?: string) {
         setState((current) => ({
           ...current,
           activityEdits: {
             ...current.activityEdits,
-            [activityId]: fields,
+            [activityId]: {
+              ...fields,
+              landGroupId: groupId ?? fields.landGroupId,
+            },
           },
         }));
-        void saveSupabaseActivityEdit(activityId, parentItemId, dayId, fields);
+        void saveSupabaseActivityEdit(activityId, parentItemId, dayId, fields, groupId);
       },
-      addActivity(dayId: string, parentItemId: string, activity: Activity) {
+      addActivity(dayId: string, parentItemId: string, activity: Activity, groupId?: string) {
+        const storageGroupId = groupId ?? parentItemId;
+        const activityWithGroup = {
+          ...activity,
+          landGroupId: groupId ?? activity.landGroupId,
+        };
         setState((current) => ({
           ...current,
           addedActivities: {
             ...current.addedActivities,
-            [parentItemId]: [...(current.addedActivities[parentItemId] ?? []).filter((existing) => existing.id !== activity.id), activity],
+            [storageGroupId]: [...(current.addedActivities[storageGroupId] ?? []).filter((existing) => existing.id !== activity.id), activityWithGroup],
           },
         }));
-        void saveSupabaseActivityAdd(parentItemId, dayId, activity);
+        void saveSupabaseActivityAdd(parentItemId, dayId, activityWithGroup, groupId);
       },
-      deleteActivity(dayId: string, parentItemId: string, activityId: string) {
+      deleteActivity(dayId: string, parentItemId: string, activityId: string, groupId?: string) {
         setState((current) => ({
           ...current,
           deletedActivityIds: current.deletedActivityIds.includes(activityId) ? current.deletedActivityIds : [...current.deletedActivityIds, activityId],
         }));
-        void saveSupabaseActivityDelete(activityId, parentItemId, dayId);
+        void saveSupabaseActivityDelete(activityId, parentItemId, dayId, groupId);
       },
     }),
     [state],

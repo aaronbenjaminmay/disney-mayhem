@@ -285,7 +285,18 @@ export const tripDays: TripDay[] = [
         activities: [
           { id: 'may-31-safaris', title: 'Kilimanjaro Safaris', location: 'Africa' },
           { id: 'may-31-gorilla-falls', title: 'Gorilla Falls Exploration Trail', location: 'Africa' },
-          { id: 'may-31-rafiki-bluey', title: 'Rafiki’s Planet Watch (train to Bluey)', location: 'Africa' },
+          {
+            id: 'may-31-rafiki-bluey',
+            title: 'Rafiki’s Planet Watch',
+            location: 'Rafiki’s Planet Watch',
+            notes: 'Take the Wildlife Express Train to Bluey.',
+          },
+          {
+            id: 'may-31-bluey-wild-world',
+            title: 'Bluey’s Wild World',
+            location: 'Rafiki’s Planet Watch',
+            notes: 'Use the virtual queue from 7:00 AM.',
+          },
         ],
       },
       {
