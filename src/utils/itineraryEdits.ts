@@ -3,6 +3,7 @@ import { getActivityLand, getLandGroupId, isDifferentKnownParkLand, slugifyLandG
 import { getItemStart } from './time';
 
 const warnedPersistenceIds = new Set<string>();
+const validItemTypes = new Set(['scheduled', 'reservation', 'flexible']);
 
 function warnUnknownPersistenceReference(kind: string, id: string, detail?: Record<string, unknown>) {
   const warningKey = `${kind}:${id}`;
@@ -18,6 +19,49 @@ function warnUnknownPersistenceReference(kind: string, id: string, detail?: Reco
 
 export function isReservationItem(item: TripItem): item is ReservationItem | ScheduledItem {
   return item.type === 'reservation' || (item.type === 'scheduled' && item.category === 'reservation');
+}
+
+function isKnownItemType(value: unknown): value is TripItem['type'] {
+  return typeof value === 'string' && validItemTypes.has(value);
+}
+
+function getSafeItemType(value: unknown, fallback: TripItem['type'], id?: string): TripItem['type'] {
+  if (isKnownItemType(value)) return value;
+
+  if (id) {
+    warnUnknownPersistenceReference('unknown item type', id, { type: value, fallback });
+  }
+
+  return fallback;
+}
+
+function getNormalizedFallbackType(item: TripItem): TripItem['type'] {
+  return 'activities' in item && Array.isArray(item.activities) ? 'flexible' : 'scheduled';
+}
+
+function normalizeTripItem(item: TripItem): TripItem {
+  const runtimeItem = item as TripItem & { type?: unknown; category?: unknown; area?: unknown };
+  if (isKnownItemType(runtimeItem.type)) return item;
+
+  const fallback = getNormalizedFallbackType(item);
+  warnUnknownPersistenceReference('unknown item type', item.id, { type: runtimeItem.type, fallback });
+
+  if (fallback === 'flexible') {
+    return {
+      ...item,
+      type: 'flexible',
+      area: typeof runtimeItem.area === 'string' ? runtimeItem.area : item.location || 'Flexible block',
+      location: item.location || (typeof runtimeItem.area === 'string' ? runtimeItem.area : ''),
+      activities: 'activities' in item && Array.isArray(item.activities) ? item.activities : [],
+    };
+  }
+
+  return {
+    ...item,
+    type: 'scheduled',
+    location: item.location || '',
+    category: typeof runtimeItem.category === 'string' ? runtimeItem.category as ScheduledItem['category'] : 'park',
+  };
 }
 
 export function toEditableFields(item: TripItem, dayDate?: string): EditableItemFields {
@@ -40,6 +84,7 @@ export function toEditableFields(item: TripItem, dayDate?: string): EditableItem
 
 export function createItemFromFields(id: string, fields: EditableItemFields): TripItem {
   const time = fields.time?.trim();
+  const itemType = getSafeItemType(fields.type, 'scheduled', id);
   const base = {
     id,
     date: fields.date,
@@ -55,7 +100,7 @@ export function createItemFromFields(id: string, fields: EditableItemFields): Tr
     placement: fields.placement,
   };
 
-  if (fields.type === 'reservation') {
+  if (itemType === 'reservation') {
     return {
       ...base,
       type: 'reservation',
@@ -65,7 +110,7 @@ export function createItemFromFields(id: string, fields: EditableItemFields): Tr
     } satisfies ReservationItem;
   }
 
-  if (fields.type === 'flexible') {
+  if (itemType === 'flexible') {
     return {
       ...base,
       type: 'flexible',
@@ -83,42 +128,48 @@ export function createItemFromFields(id: string, fields: EditableItemFields): Tr
 }
 
 function applyEdit(item: TripItem, fields?: EditableItemFields): TripItem {
-  if (!fields) return item;
+  const safeItem = normalizeTripItem(item);
+  if (!fields) return safeItem;
 
-  const updated = createItemFromFields(item.id, fields);
-  const existingActivities = 'activities' in item && Array.isArray(item.activities) ? item.activities : undefined;
+  const preservedType = getSafeItemType(safeItem.type, getNormalizedFallbackType(safeItem), safeItem.id);
+  const safeFields = {
+    ...fields,
+    type: preservedType,
+  };
+  const updated = createItemFromFields(safeItem.id, safeFields);
+  const existingActivities = 'activities' in safeItem && Array.isArray(safeItem.activities) ? safeItem.activities : undefined;
 
   if (updated.type === 'flexible' && existingActivities) {
     return {
-      ...item,
+      ...safeItem,
       ...updated,
-      area: fields.location.trim() || ('area' in item ? item.area : undefined) || item.location || 'Flexible block',
+      area: fields.location.trim() || ('area' in safeItem ? safeItem.area : undefined) || safeItem.location || 'Flexible block',
       activities: existingActivities,
     };
   }
 
   if (updated.type === 'scheduled' && existingActivities) {
     return {
-      ...item,
+      ...safeItem,
       ...updated,
-      area: 'area' in item ? item.area : undefined,
+      area: 'area' in safeItem ? safeItem.area : undefined,
       activities: existingActivities,
       category: updated.category,
     };
   }
 
-  if (updated.type === 'scheduled' && item.type === 'scheduled') {
+  if (updated.type === 'scheduled' && safeItem.type === 'scheduled') {
     return {
-      ...item,
+      ...safeItem,
       ...updated,
-      category: item.category,
+      category: safeItem.category,
     } satisfies ScheduledItem;
   }
 
   if (updated.type === 'reservation') {
     return {
       ...updated,
-      date: updated.date || fields.date || '',
+      date: updated.date || safeFields.date || '',
       category: 'reservation',
     } satisfies ReservationItem;
   }
@@ -128,7 +179,8 @@ function applyEdit(item: TripItem, fields?: EditableItemFields): TripItem {
 
 function getItemTargetDayId(item: TripItem, sourceDayId: string, fields?: EditableItemFields): string {
   if (fields?.date) return fields.date;
-  if (item.type === 'reservation' && item.date) return item.date;
+  const safeItem = normalizeTripItem(item);
+  if (safeItem.type === 'reservation' && safeItem.date) return safeItem.date;
   return sourceDayId;
 }
 
@@ -407,7 +459,7 @@ export function mergeTripEdits(
       .filter((item) => !deleted.has(item.id))
       .forEach((item) => {
         const fields = itemEdits[item.id];
-        const updated = applyEdit(item, fields);
+        const updated = applyEdit(normalizeTripItem(item), fields);
         const targetDayId = getItemTargetDayId(updated, sourceDayId, fields);
         itemsByDay.set(targetDayId, insertAddedItem(itemsByDay.get(targetDayId) ?? [], updated));
       });

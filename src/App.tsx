@@ -1273,19 +1273,6 @@ function ItemEditorSheet({
         </div>
 
         <div className="mt-5 space-y-4">
-          <label className="block">
-            <span className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Type</span>
-            <select
-              value={draft.type}
-              onChange={(event) => onChange({ ...draft, type: event.target.value as TripItem['type'] })}
-              className="mt-2 min-h-12 w-full rounded-2xl border border-[#2C2C2E] bg-[#111111] px-4 text-lg font-bold text-white outline-none focus:border-[#0A84FF] focus:ring-4 focus:ring-[#0A84FF]/30"
-            >
-              <option value="scheduled">Scheduled</option>
-              <option value="reservation">Reservation</option>
-              <option value="flexible">Flexible</option>
-            </select>
-          </label>
-
           {draft.type === 'reservation' ? (
             <label className="block">
               <span className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Date</span>
