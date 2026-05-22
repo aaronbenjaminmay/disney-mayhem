@@ -1063,6 +1063,10 @@ type AddChoiceState = {
   dayId: string;
 };
 
+type ReservationAddChoiceState = {
+  dayId?: string;
+};
+
 type AddLandCardState = {
   dayId: string;
   land: string;
@@ -1216,6 +1220,66 @@ function AddChoiceSheet({
               </span>
             </button>
           ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function ReservationAddChoiceSheet({
+  day,
+  onChoose,
+  onCancel,
+}: {
+  day?: TripDay;
+  onChoose: () => void;
+  onCancel: () => void;
+}) {
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') onCancel();
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onCancel]);
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-end bg-black/70 px-3 py-4 sm:items-center sm:justify-center" role="presentation">
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="reservation-add-choice-title"
+        className="glass-surface screen-fade w-full max-w-xl rounded-[2rem] p-5"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-black uppercase tracking-wide text-[#0A84FF]">
+              {day ? formatDateLabel(day.date) : 'Reservations'}
+            </p>
+            <h2 id="reservation-add-choice-title" className="mt-1 text-2xl font-black text-white">
+              {day ? `Add to ${day.label}` : 'Add reservation'}
+            </h2>
+          </div>
+          <button type="button" onClick={onCancel} className="ios-icon-button" aria-label="Close" title="Close">
+            <LucideIcon name="x" size={20} />
+          </button>
+        </div>
+
+        <div className="mt-5 grid gap-3">
+          <button
+            type="button"
+            onClick={onChoose}
+            className="flex min-h-16 items-center gap-3 rounded-[1.25rem] border border-white/[0.08] bg-[#1C1C1E]/70 px-4 py-3 text-left transition hover:bg-[#2C2C2E]/70 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]"
+          >
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#111111] text-[#A1A1A6]">
+              <LucideIcon name="calendar" size={20} />
+            </span>
+            <span>
+              <span className="block text-[17px] font-black text-white">Add reservation</span>
+              <span className="mt-1 block text-[14px] text-[#A1A1A6]">Dining, activities, or other fixed bookings.</span>
+            </span>
+          </button>
         </div>
       </section>
     </div>
@@ -2353,51 +2417,131 @@ function AllDaysScreen({
 function ReservationsScreen({
   reservations,
   onEditItem,
-  onAddReservation,
+  onOpenAddOptions,
+  onAddReservationForDay,
   onDeleteItem,
+  onBackToDashboard,
 }: {
   reservations: ReturnType<typeof getReservations>;
   onEditItem: (dayId: string, item: TripItem) => void;
-  onAddReservation: () => void;
+  onOpenAddOptions: () => void;
+  onAddReservationForDay: (dayId: string) => void;
   onDeleteItem: (itemId: string) => void;
+  onBackToDashboard: () => void;
 }) {
   const reservationGroups = groupReservationsByDay(reservations);
+  const sectionRef = useRef<HTMLElement | null>(null);
+  const headerRef = useRef<HTMLElement | null>(null);
+  const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
+
+  useEffect(() => {
+    function updateCollapsedHeader() {
+      const section = sectionRef.current;
+      const header = headerRef.current;
+      if (!section || !header) return;
+
+      const headerRect = header.getBoundingClientRect();
+      const sectionRect = section.getBoundingClientRect();
+      const shouldCollapse = headerRect.bottom < 92 && sectionRect.bottom > 160;
+      setIsHeaderCollapsed((current) => (current === shouldCollapse ? current : shouldCollapse));
+    }
+
+    updateCollapsedHeader();
+    window.addEventListener('scroll', updateCollapsedHeader, { passive: true });
+    window.addEventListener('resize', updateCollapsedHeader);
+    return () => {
+      window.removeEventListener('scroll', updateCollapsedHeader);
+      window.removeEventListener('resize', updateCollapsedHeader);
+    };
+  }, []);
 
   return (
-    <main className="screen-fade px-4 pb-6 pt-8">
-      <section className="glass-surface rounded-[1.5rem] px-4 py-4" aria-labelledby="reservations-heading">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-[12px] font-black uppercase tracking-[0.16em] text-[#0A84FF]">Fixed plans</p>
-            <h1 id="reservations-heading" className="mt-2 text-[28px] font-black leading-tight text-white">
-              Reservations
-            </h1>
-          </div>
+    <main ref={sectionRef} className="screen-fade section-rise px-4 pb-6 pt-3" aria-labelledby="reservations-heading">
+      <div className="sticky top-0 z-30 mb-3 pt-3">
+        <div
+          className={`flex min-h-14 items-center gap-2 rounded-full border border-white/[0.08] bg-[#1C1C1E]/75 px-1.5 py-1.5 shadow-[0_8px_24px_rgba(0,0,0,0.35)] backdrop-blur-xl transition-all duration-200 ${
+            isHeaderCollapsed ? 'w-full' : 'w-14'
+          }`}
+        >
           <button
             type="button"
-            onClick={onAddReservation}
-            className="ios-icon-button"
+            onClick={onBackToDashboard}
+            className="ios-icon-button min-h-11 min-w-11 shadow-none"
+            aria-label="Back to dashboard"
+            title="Back to dashboard"
+          >
+            <LucideIcon name="chevron-left" size={24} />
+          </button>
+          <p
+            className={`min-w-0 flex-1 truncate text-[15px] font-black text-white transition-opacity duration-200 ${
+              isHeaderCollapsed ? 'opacity-100' : 'pointer-events-none opacity-0'
+            }`}
+            aria-hidden={!isHeaderCollapsed}
+          >
+            Reservations
+          </p>
+          <button
+            type="button"
+            onClick={onOpenAddOptions}
+            className={`ios-icon-button min-h-11 min-w-11 shadow-none transition-opacity duration-200 ${
+              isHeaderCollapsed ? 'opacity-100' : 'pointer-events-none opacity-0'
+            }`}
             aria-label="Add reservation"
             title="Add reservation"
+            tabIndex={isHeaderCollapsed ? 0 : -1}
+            aria-hidden={!isHeaderCollapsed}
           >
             <LucideIcon name="plus" size={20} />
           </button>
         </div>
-      </section>
+      </div>
 
-      <div className="mt-7 space-y-8">
+      <header ref={headerRef} className="mb-8 border-b border-[#2C2C2E]/70 pb-7">
+        <div className="flex items-start justify-between gap-5">
+          <h1 id="reservations-heading" className="text-[32px] font-black leading-[1.02] text-white sm:text-[38px]">
+            Reservations
+          </h1>
+          <button
+            type="button"
+            onClick={onOpenAddOptions}
+            className="ios-icon-button mt-1 min-h-12 min-w-12 border-white/15 bg-[#1C1C1E]/85"
+            aria-label="Add reservation"
+            title="Add reservation"
+          >
+            <LucideIcon name="plus" size={24} />
+          </button>
+        </div>
+      </header>
+
+      <div className="space-y-8">
         {reservationGroups.map(({ day, items }) => (
           <section
             key={day.id}
             aria-labelledby={`${day.id}-reservations-heading`}
-            className="glass-surface rounded-[1.5rem] px-4 py-4"
+            className="glass-surface rounded-[1.35rem] px-4 py-4"
           >
-            <div className="pb-4">
-              <p className="text-[12px] font-black uppercase tracking-[0.16em] text-[#0A84FF]">{formatDateLabel(day.date)}</p>
-              <h2 id={`${day.id}-reservations-heading`} className="mt-1 text-[20px] font-black leading-tight text-white">
-                {day.label}
-              </h2>
-              <p className="mt-1 text-sm font-semibold text-[#A1A1A6]">{day.park}</p>
+            <div className="flex items-start justify-between gap-4 pb-4">
+              <div>
+                <p className="text-[12px] font-black uppercase tracking-[0.16em] text-[#0A84FF]">{formatDateLabel(day.date)}</p>
+                <h2 id={`${day.id}-reservations-heading`} className="mt-1 text-[20px] font-black leading-tight text-white">
+                  {day.label}
+                </h2>
+                <p className="mt-1 text-sm font-semibold text-[#A1A1A6]">{day.park}</p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <p className="rounded-full border border-white/[0.08] bg-[#111111]/70 px-3 py-1 text-[12px] font-black text-[#A1A1A6]">
+                  {items.length} {items.length === 1 ? 'plan' : 'plans'}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => onAddReservationForDay(day.id)}
+                  className="ios-icon-button"
+                  aria-label={`Add reservation for ${day.label}`}
+                  title={`Add reservation for ${day.label}`}
+                >
+                  <LucideIcon name="plus" size={20} />
+                </button>
+              </div>
             </div>
             <div className="divide-y divide-[#2C2C2E]/70">
               {items.map((item) => (
@@ -2449,6 +2593,7 @@ export default function App() {
   const [now, setNow] = useState(() => new Date());
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [addChoice, setAddChoice] = useState<AddChoiceState | null>(null);
+  const [reservationAddChoice, setReservationAddChoice] = useState<ReservationAddChoiceState | null>(null);
   const [landCardAdd, setLandCardAdd] = useState<AddLandCardState | null>(null);
   const [landEditor, setLandEditor] = useState<LandEditorState | null>(null);
   const [landDelete, setLandDelete] = useState<LandDeleteState | null>(null);
@@ -2470,6 +2615,10 @@ export default function App() {
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, [activeTab, selectedDayId]);
 
   const tripDays = useMemo(
     () =>
@@ -2637,23 +2786,35 @@ export default function App() {
     openGenericAddItem(dayId);
   }
 
-  function openAddReservation() {
-    const dayId = activeState.day.id;
+  function openReservationAddOptions(dayId?: string) {
+    setReservationAddChoice({ dayId });
+  }
+
+  function openAddReservation(dayId?: string) {
+    const day = dayId ? tripDays.find((tripDay) => tripDay.id === dayId) : activeState.day;
+    const targetDay = day ?? activeState.day;
     setEditor({
       mode: 'add',
-      dayId,
+      dayId: targetDay.id,
       draft: {
-        date: activeState.day.date,
+        date: targetDay.date,
         time: '',
         endTime: '',
         title: '',
         location: '',
-        area: activeState.day.location,
+        area: targetDay.location,
         confirmationNumber: '',
         notes: '',
         type: 'reservation',
       },
     });
+  }
+
+  function chooseReservationAddType() {
+    if (!reservationAddChoice) return;
+    const { dayId } = reservationAddChoice;
+    setReservationAddChoice(null);
+    openAddReservation(dayId);
   }
 
   function openLandEditor(day: TripDay, item: TimelineActivityBlock, group: TimelineLandGroup) {
@@ -2954,7 +3115,7 @@ export default function App() {
         className="pointer-events-none fixed inset-0 z-[1] bg-[linear-gradient(to_bottom,rgba(0,0,0,0.12),rgba(0,0,0,0.38))]"
       />
       <div key={`${activeTab}-${selectedDayId ?? 'all'}`} className={`screen-fade relative z-10 mx-auto max-w-4xl ${phase === 'before' ? 'pb-8' : 'pb-20'}`}>
-        {phase === 'before' && activeTab !== 'today' && activeTab !== 'days' ? (
+        {phase === 'before' && activeTab !== 'today' && activeTab !== 'days' && activeTab !== 'reservations' ? (
           <div className="sticky top-0 z-20 px-4 pb-2 pt-3 backdrop-blur-sm">
             <button
               type="button"
@@ -2998,11 +3159,13 @@ export default function App() {
           <ReservationsScreen
             reservations={reservations}
             onEditItem={openEditItem}
-            onAddReservation={openAddReservation}
+            onOpenAddOptions={() => openReservationAddOptions()}
+            onAddReservationForDay={openAddReservation}
             onDeleteItem={(itemId) => {
               const reservation = reservations.find(({ item }) => item.id === itemId);
               requestItemDelete(itemId, reservation?.item.title ?? 'Reservation');
             }}
+            onBackToDashboard={openDashboard}
           />
         ) : null}
       </div>
@@ -3021,6 +3184,13 @@ export default function App() {
           day={tripDays.find((day) => day.id === addChoice.dayId) ?? activeState.day}
           onChoose={chooseAddType}
           onCancel={() => setAddChoice(null)}
+        />
+      ) : null}
+      {reservationAddChoice ? (
+        <ReservationAddChoiceSheet
+          day={reservationAddChoice.dayId ? tripDays.find((day) => day.id === reservationAddChoice.dayId) : undefined}
+          onChoose={chooseReservationAddType}
+          onCancel={() => setReservationAddChoice(null)}
         />
       ) : null}
       {landCardAdd ? (
