@@ -931,10 +931,7 @@ function NotificationSettingsControl() {
   const isBusy = status === 'checking' || status === 'working';
   const isEnabled = status === 'enabled';
   const canEnable = canRequestNotifications(capabilities) && !isBusy;
-  const helperText =
-    status === 'unsupported'
-      ? 'Add to Home Screen to enable notifications'
-      : note || (isEnabled ? 'Notifications on' : 'Turn on notifications');
+  const isDisabled = isBusy || (!isEnabled && !canEnable);
 
   return (
     <section aria-labelledby="notification-settings-title" className="glass-surface rounded-[1.2rem] px-4 py-3">
@@ -943,27 +940,47 @@ function NotificationSettingsControl() {
           <p id="notification-settings-title" className="text-[15px] font-black leading-tight text-white">
             Morning + Goodnight Notifications
           </p>
-          <p className="mt-1 text-[13px] font-semibold leading-5 text-[#A1A1A6]">{helperText}</p>
+          <p className="mt-1 text-[13px] font-semibold leading-5 text-[#A1A1A6]">Turn on notifications</p>
         </div>
-        <button
-          type="button"
-          role="switch"
-          aria-label="Morning and goodnight notifications"
-          aria-checked={isEnabled}
-          onClick={isEnabled ? disableNotifications : enableNotifications}
-          disabled={isBusy || (!isEnabled && !canEnable)}
-          className={`relative h-11 w-[3.25rem] shrink-0 rounded-full border transition-colors focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF] disabled:cursor-not-allowed disabled:opacity-55 ${
-            isEnabled ? 'border-[#0A84FF] bg-[#0A84FF]' : 'border-white/[0.08] bg-[#2C2C2E]/90'
+        <label
+          className={`relative flex min-h-11 w-[52px] min-w-[52px] max-w-[52px] flex-[0_0_52px] shrink-0 items-center ${
+            isDisabled ? 'cursor-not-allowed opacity-55' : 'cursor-pointer'
           }`}
         >
-          <span className="sr-only">{isEnabled ? 'Disable notifications' : 'Enable notifications'}</span>
+          <input
+            type="checkbox"
+            role="switch"
+            aria-label="Morning and goodnight notifications"
+            checked={isEnabled}
+            disabled={isDisabled}
+            onChange={() => {
+              if (isEnabled) {
+                void disableNotifications();
+              } else {
+                void enableNotifications();
+              }
+            }}
+            className="peer sr-only"
+          />
           <span
             aria-hidden="true"
-            className={`absolute top-1/2 h-7 w-7 -translate-y-1/2 rounded-full shadow-[0_3px_10px_rgba(0,0,0,0.35)] transition-transform ${
-              isEnabled ? 'translate-x-[1.2rem] bg-white' : 'translate-x-[0.15rem] bg-[#A1A1A6]'
+            className={`relative block h-8 w-[52px] min-w-[52px] max-w-[52px] flex-[0_0_52px] rounded-full transition-colors peer-focus-visible:outline peer-focus-visible:outline-4 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#0A84FF] ${
+              isEnabled ? 'bg-[#0A84FF]' : 'bg-[rgba(120,120,128,0.24)]'
             }`}
-          />
-        </button>
+          >
+            <span
+              className={`absolute left-0.5 top-0.5 h-7 w-7 rounded-full bg-white shadow-[0_3px_10px_rgba(0,0,0,0.35)] transition-transform ${
+                isEnabled ? 'translate-x-5' : 'translate-x-0'
+              }`}
+            />
+          </span>
+          <span
+            className="sr-only"
+            aria-live="polite"
+          >
+            {isEnabled ? 'Notifications enabled' : 'Notifications disabled'}
+          </span>
+        </label>
       </div>
     </section>
   );
