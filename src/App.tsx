@@ -204,6 +204,14 @@ function getReservationGroupTitle(day: TripDay, card?: ReservationDayCard): stri
   return formatDateLabel(day.date);
 }
 
+function formatDashboardDateLabel(date: string): string {
+  const parsedDate = new Date(`${date}T12:00:00`);
+  const weekday = new Intl.DateTimeFormat('en-US', { weekday: 'short' }).format(parsedDate).toUpperCase();
+  const month = new Intl.DateTimeFormat('en-US', { month: 'short' }).format(parsedDate).toUpperCase();
+  const day = new Intl.DateTimeFormat('en-US', { day: 'numeric' }).format(parsedDate);
+  return `${weekday}, ${month} ${day}`;
+}
+
 function addMinutesToTime(time: string, minutesToAdd: number): string {
   const [hours, minutes] = time.split(':').map(Number);
   const totalMinutes = hours * 60 + minutes + minutesToAdd;
@@ -823,7 +831,7 @@ function TodayScreen({
               return (
                 <DashboardTile
                   key={tripDay.id}
-                  title={formatDateLabel(tripDay.date)}
+                  title={formatDashboardDateLabel(tripDay.date)}
                   subtitle={tripDay.label}
                   icon={presentation.icon}
                   onClick={() => onOpenDay(tripDay.id)}

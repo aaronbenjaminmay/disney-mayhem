@@ -138,6 +138,10 @@ button:active {
   animation: section-rise 340ms ease-out both;
 }
 
+.status-complete-bounce {
+  animation: status-complete-bounce 220ms ease-out both;
+}
+
 @keyframes screen-fade {
   from {
     opacity: 0;
@@ -160,6 +164,20 @@ button:active {
   }
 }
 
+@keyframes status-complete-bounce {
+  0% {
+    transform: scale(0.94);
+  }
+
+  55% {
+    transform: scale(1.08);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -171,7 +189,8 @@ button:active {
   }
 
   .screen-fade,
-  .section-rise {
+  .section-rise,
+  .status-complete-bounce {
     animation: none !important;
   }
 
