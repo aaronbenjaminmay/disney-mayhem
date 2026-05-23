@@ -80,32 +80,52 @@ function getPretripMessages(kind: NotificationKind, daysToGo: number): Notificat
   if (kind === "night") {
     return [
       {
-        title: "Countdown cozy mode",
-        body: `Rest up. The countdown gets smaller tomorrow: ${days} to go.`,
+        title: "Dream a little dream",
+        body: `The castle will be there in the morning. ${days} to go.`,
       },
       {
-        title: "Sleep now, mayhem later",
-        body: `${days} until Disney Mayhem. The adventure can wait one more night.`,
+        title: "Chosen ones need sleep",
+        body: `Even the chosen ones need sleep. ${days} until mayhem.`,
       },
       {
-        title: "Dream team recharge",
-        body: `Lights out for now. ${days} until the snacks, smiles, and spectacular logistics begin.`,
+        title: "Close your eyes",
+        body: `Tomorrow gets you closer. The force can wait.`,
+      },
+      {
+        title: "Never grow up",
+        body: "Sleep now. Never grow up… but definitely rest.",
       },
     ];
   }
 
   return [
     {
-      title: "Disney Mayhem countdown",
-      body: `Only ${days} until Disney Mayhem. Adventure is warming up.`,
+      title: "Adventure is out there",
+      body: `And it’s getting closer. ${days} to go.`,
     },
     {
-      title: "Snack strategy day",
-      body: `${days} to go — snack strategy is absolutely part of the plan.`,
+      title: "You’ve got a friend",
+      body: `And a trip to plan. ${days} to Disney Mayhem.`,
     },
     {
-      title: "Magic loading",
-      body: `${days} until departure. Shoes, chargers, and patience are entering final form.`,
+      title: "The magic is calling",
+      body: "You don’t have to answer yet… but you will.",
+    },
+    {
+      title: "Second star soon",
+      body: `Second star to the right… in ${days}.`,
+    },
+    {
+      title: "To infinity",
+      body: `The countdown is real now. ${days} to Disney.`,
+    },
+    {
+      title: "Something incredible",
+      body: "Somewhere, something incredible is waiting to be known.",
+    },
+    {
+      title: "Almost there",
+      body: `Just keep swimming. ${days} to go.`,
     },
   ];
 }
@@ -114,24 +134,20 @@ function getDepartureDayMessages(kind: NotificationKind): NotificationMessage[] 
   if (kind === "night") {
     return [
       {
-        title: "Departure day complete",
-        body: "Wheels rolled, snacks handled, mayhem officially underway. Sleep well.",
+        title: "First spell cast",
+        body: "This was only the beginning. Dream big tonight.",
       },
       {
-        title: "First day in the books",
-        body: "Travel / EPCOT day is wrapped. Feet tired, hearts full.",
+        title: "Travel / EPCOT wrapped",
+        body: "Adventure checked off. One bite at a time.",
       },
     ];
   }
 
   return [
     {
-      title: "Today is the day",
-      body: "Wheels up, snacks packed, mayhem activated.",
-    },
-    {
-      title: "Departure day energy",
-      body: "Travel / EPCOT is calling. Hydrate early and trust the snack bag.",
+      title: "✨ The journey begins",
+      body: "This is the start of something magical. Punch it.",
     },
   ];
 }
@@ -140,12 +156,20 @@ function getTripMorningMessages(dayTitle: string): NotificationMessage[] {
   if (dayTitle === "Magic Kingdom") {
     return [
       {
-        title: "Good morning",
-        body: "Magic Kingdom is calling. Comfortable shoes are highly encouraged.",
+        title: "Pixie dust protocol",
+        body: "All it takes is faith, trust… and a little pixie dust.",
       },
       {
-        title: "Castle day",
-        body: "Magic Kingdom today. Big smiles, brave feet, snack diplomacy.",
+        title: "Welcome home",
+        body: "The castle’s been waiting.",
+      },
+      {
+        title: "Happiest things",
+        body: "Think of the happiest things. You’re already there.",
+      },
+      {
+        title: "Dreams department",
+        body: "This is where dreams come true. No pressure.",
       },
     ];
   }
@@ -153,12 +177,20 @@ function getTripMorningMessages(dayTitle: string): NotificationMessage[] {
   if (dayTitle === "Animal Kingdom") {
     return [
       {
-        title: "Animal Kingdom day",
-        body: "Hydrate, roam, repeat. The wild side has a schedule.",
+        title: "Circle starts early",
+        body: "The great circle of life… starts early.",
       },
       {
-        title: "Roaming mode",
-        body: "Animal Kingdom today. Shade breaks are part of the adventure.",
+        title: "Look closer",
+        body: "There’s more to see today.",
+      },
+      {
+        title: "Part of it",
+        body: "You’re not just visiting. You’re part of it.",
+      },
+      {
+        title: "Pandora is calling",
+        body: "Don’t rush it.",
       },
     ];
   }
@@ -166,12 +198,20 @@ function getTripMorningMessages(dayTitle: string): NotificationMessage[] {
   if (dayTitle === "Hollywood Studios") {
     return [
       {
-        title: "Hollywood Studios today",
-        body: "Main character energy required. Backup snacks also recommended.",
+        title: "Not so far away",
+        body: "A long time ago… in a park not so far away…",
       },
       {
-        title: "Studio day",
-        body: "Hollywood Studios is up. Walk in like the soundtrack already started.",
+        title: "The force is with you",
+        body: "Always. Especially near the snacks.",
+      },
+      {
+        title: "Part of the story",
+        body: "Today you’re not watching. You’re in it.",
+      },
+      {
+        title: "To infinity",
+        body: "And beyond. Hollywood Studios is ready.",
       },
     ];
   }
@@ -179,12 +219,16 @@ function getTripMorningMessages(dayTitle: string): NotificationMessage[] {
   if (dayTitle === "Chill Day / EPCOT") {
     return [
       {
-        title: "Chill day with sparkle",
-        body: "EPCOT later, easy mode first. That still counts as planning.",
+        title: "Hakuna Matata mode",
+        body: "No worries… for today.",
       },
       {
-        title: "Slow roll morning",
-        body: "Chill Day / EPCOT. The best itinerary has room to breathe.",
+        title: "Take it slow",
+        body: "The magic isn’t going anywhere.",
+      },
+      {
+        title: "Wandering day",
+        body: "Some days are for wandering.",
       },
     ];
   }
@@ -192,20 +236,24 @@ function getTripMorningMessages(dayTitle: string): NotificationMessage[] {
   if (dayTitle === "Travel Home") {
     return [
       {
-        title: "Travel day",
-        body: "One last round of mayhem. Home is part of the story too.",
+        title: "So long, partner",
+        body: "Travel home day. Pack the memories gently.",
       },
       {
-        title: "Homeward sparkle",
-        body: "Pack the memories, find the chargers, and roll gently toward home.",
+        title: "Not the end",
+        body: "The adventure doesn’t end here.",
+      },
+      {
+        title: "Magic packed",
+        body: "You’re taking the magic with you.",
       },
     ];
   }
 
   return [
     {
-      title: "Good morning",
-      body: `${dayTitle} today. Let the plan lead, but leave room for magic.`,
+      title: "Good morning, crew",
+      body: `${dayTitle} today. Follow the plan, leave room for magic.`,
     },
   ];
 }
@@ -214,12 +262,16 @@ function getTripNightMessages(dayTitle: string): NotificationMessage[] {
   if (dayTitle === "Magic Kingdom") {
     return [
       {
-        title: "Magic Kingdom wrapped",
-        body: "Feet tired, hearts full. That counts as a very good kind of magic.",
+        title: "Happily for today",
+        body: "And they lived happily ever after… for today.",
       },
       {
-        title: "Castle lights out",
-        body: "Magic Kingdom day is in the books. Tomorrow gets its own adventure.",
+        title: "Fireworks feeling",
+        body: "The fireworks hit. You felt it.",
+      },
+      {
+        title: "Never grow up",
+        body: "Not after today.",
       },
     ];
   }
@@ -227,12 +279,16 @@ function getTripNightMessages(dayTitle: string): NotificationMessage[] {
   if (dayTitle === "Animal Kingdom") {
     return [
       {
-        title: "Animal Kingdom survived",
-        body: "Rest like a legend. The wild miles have been earned.",
+        title: "Remember who you are",
+        body: "That wild feeling stays with you.",
       },
       {
-        title: "Wild day complete",
-        body: "Animal Kingdom wrapped. Let the feet forgive everyone overnight.",
+        title: "Something else",
+        body: "That wasn’t just a park. That was something else.",
+      },
+      {
+        title: "Wild at heart",
+        body: "You felt the wild today. That stays with you.",
       },
     ];
   }
@@ -240,12 +296,16 @@ function getTripNightMessages(dayTitle: string): NotificationMessage[] {
   if (dayTitle === "Hollywood Studios") {
     return [
       {
-        title: "Hollywood Studios wrapped",
-        body: "The credits can roll. Tomorrow gets its own adventure.",
+        title: "Force and rest",
+        body: "May the force be with you… tonight and always.",
       },
       {
-        title: "Studio lights down",
-        body: "Hollywood Studios is complete. Recharge like the sequel depends on it.",
+        title: "Adventure lived",
+        body: "You lived the adventure. That counts.",
+      },
+      {
+        title: "Story glow",
+        body: "The story ended. The feeling didn’t.",
       },
     ];
   }
@@ -253,12 +313,16 @@ function getTripNightMessages(dayTitle: string): NotificationMessage[] {
   if (dayTitle === "Chill Day / EPCOT") {
     return [
       {
-        title: "Chill day complete",
-        body: "Easy mode still makes memories. Rest up for the next round.",
+        title: "Quiet magic",
+        body: "Even the quiet days feel like magic.",
       },
       {
-        title: "EPCOT evening saved",
-        body: "A slower day is still a story. Sleep like tomorrow has plans.",
+        title: "No worries",
+        body: "No worries today. None tomorrow either.",
+      },
+      {
+        title: "Just right",
+        body: "That was exactly what it needed to be.",
       },
     ];
   }
@@ -266,12 +330,16 @@ function getTripNightMessages(dayTitle: string): NotificationMessage[] {
   if (dayTitle === "Travel Home") {
     return [
       {
-        title: "Travel day done",
-        body: "Home is part of the story too. Let the memories settle in.",
+        title: "Friendship mode",
+        body: "You’ve got a friend in me… even back home.",
       },
       {
-        title: "Mayhem landed",
-        body: "Bags down, hearts full. The trip gets to become stories now.",
+        title: "Story continues",
+        body: "Somewhere, the story continues.",
+      },
+      {
+        title: "Magic changed",
+        body: "The magic doesn’t leave. It just changes.",
       },
     ];
   }
@@ -279,7 +347,7 @@ function getTripNightMessages(dayTitle: string): NotificationMessage[] {
   return [
     {
       title: `${dayTitle} complete`,
-      body: "Rest up. Today earned a quiet ending.",
+      body: "Even mayhem needs a bedtime. Dream big.",
     },
   ];
 }
@@ -326,6 +394,21 @@ function getMessage(kind: NotificationKind, date = getEasternDateString()) {
   return {
     message: pickMessage(date, kind, messages),
     skipped: false,
+  };
+}
+
+function getNotificationPayloadMessage(
+  kind: NotificationKind,
+  message: NotificationMessage,
+): NotificationMessage {
+  if (kind === "test") return message;
+
+  const title = message.title.trim();
+  const body = message.body.trim();
+
+  return {
+    title: "",
+    body: title ? `${title}. ${body}` : body,
   };
 }
 
@@ -403,7 +486,7 @@ serve(async (req) => {
       VAPID_PRIVATE_KEY
     );
 
-    const message = notification.message;
+    const message = getNotificationPayloadMessage(kind, notification.message);
 
     const supabase = createClient(
       APP_SUPABASE_URL,
@@ -424,10 +507,12 @@ serve(async (req) => {
     }
 
     const subscriptions = (data ?? []) as PushSubscriptionRow[];
+    const payloadTitle = kind === "test" ? message.title : "\u2063";
+    const payloadBody = message.body;
 
     const payload = JSON.stringify({
-      title: message.title,
-      body: message.body,
+      title: payloadTitle,
+      body: payloadBody,
       url: "https://aaronbenjaminmay.github.io/disney-mayhem/",
     });
 

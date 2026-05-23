@@ -69,11 +69,11 @@ self.addEventListener('push', (event) => {
     payload = event.data ? event.data.json() : {};
   } catch {
     payload = {
-      title: event.data?.text() || 'Disney Mayhem',
+      title: event.data?.text(),
     };
   }
 
-  const title = payload.title || 'Disney Mayhem';
+  const title = typeof payload.title === 'string' ? payload.title : '\u2063';
   const options = {
     body: payload.body || '',
     icon: './icon-192.png',
