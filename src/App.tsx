@@ -781,11 +781,17 @@ function FireworksOverlay({ onDone }: { onDone: () => void }) {
     if (!canvas) return undefined;
     const overlayCanvas = canvas;
 
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      const timeout = window.setTimeout(onDone, 450);
+      return () => window.clearTimeout(timeout);
+    }
+
     const context = overlayCanvas.getContext('2d');
     if (!context) return undefined;
     const drawingContext = context;
 
     let animationFrame = 0;
+    let finishTimeout = 0;
     let startTime = 0;
     let lastTime = 0;
     let isDone = false;
@@ -828,6 +834,8 @@ function FireworksOverlay({ onDone }: { onDone: () => void }) {
     }
 
     function drawFrame(timestamp: number) {
+      if (isDone) return;
+
       if (!startTime) {
         startTime = timestamp;
         lastTime = timestamp;
@@ -873,13 +881,17 @@ function FireworksOverlay({ onDone }: { onDone: () => void }) {
 
       drawingContext.restore();
 
-      if (elapsed < 2_700 || particles.length > 0) {
+      if (elapsed < 3_000) {
         animationFrame = window.requestAnimationFrame(drawFrame);
         return;
       }
 
       if (!isDone) {
         isDone = true;
+        particles.length = 0;
+        triggeredBursts.clear();
+        drawingContext.clearRect(0, 0, window.innerWidth, window.innerHeight);
+        window.cancelAnimationFrame(animationFrame);
         onDone();
       }
     }
@@ -887,15 +899,25 @@ function FireworksOverlay({ onDone }: { onDone: () => void }) {
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
     animationFrame = window.requestAnimationFrame(drawFrame);
+    finishTimeout = window.setTimeout(() => {
+      if (isDone) return;
+      isDone = true;
+      particles.length = 0;
+      triggeredBursts.clear();
+      drawingContext.clearRect(0, 0, window.innerWidth, window.innerHeight);
+      window.cancelAnimationFrame(animationFrame);
+      onDone();
+    }, 3_000);
 
     return () => {
       window.cancelAnimationFrame(animationFrame);
+      window.clearTimeout(finishTimeout);
       window.removeEventListener('resize', resizeCanvas);
     };
   }, [onDone]);
 
   return (
-    <div className="pointer-events-none fixed inset-0 z-[80] animate-[screen-fade_160ms_ease-out_both]" aria-hidden="true">
+    <div className="pointer-events-none fixed inset-0 z-[2] animate-[screen-fade_160ms_ease-out_both]" aria-hidden="true">
       <canvas ref={canvasRef} className="h-full w-full" />
     </div>
   );
@@ -3813,6 +3835,7 @@ export default function App() {
         aria-hidden="true"
         className="pointer-events-none fixed inset-0 z-[1] bg-[linear-gradient(to_bottom,rgba(0,0,0,0.12),rgba(0,0,0,0.38))]"
       />
+      {fireworksRun > 0 ? <FireworksOverlay key={fireworksRun} onDone={() => setFireworksRun(0)} /> : null}
       <div key={`${activeTab}-${selectedDayId ?? 'all'}`} className={`screen-fade relative z-10 mx-auto max-w-4xl ${phase === 'before' ? 'pb-8' : 'pb-20'}`}>
         {phase === 'before' && activeTab !== 'today' && activeTab !== 'days' && activeTab !== 'reservations' ? (
           <div className="sticky top-0 z-20 px-4 pb-2 pt-3 backdrop-blur-sm">
@@ -3867,7 +3890,6 @@ export default function App() {
         ) : null}
       </div>
       {phase === 'before' ? null : <Tabs activeTab={activeTab} onChange={openTab} />}
-      {fireworksRun > 0 ? <FireworksOverlay key={fireworksRun} onDone={() => setFireworksRun(0)} /> : null}
       {editor ? (
         <ItemEditorSheet
           editor={editor}
