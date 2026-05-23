@@ -40,7 +40,6 @@ import {
   getTripPhase,
 } from './utils/time';
 
-console.log('VAPID PUBLIC KEY:', import.meta.env.VITE_VAPID_PUBLIC_KEY);
 
 type TimelineActivityBlock = TripItem & {
   activities: Activity[];
