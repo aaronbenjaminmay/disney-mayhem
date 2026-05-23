@@ -817,7 +817,15 @@ function NotificationSettingsControl() {
   const [status, setStatus] = useState<NotificationControlStatus>('checking');
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   const [note, setNote] = useState('');
+  const [saveStatus, setSaveStatus] = useState('');
   const [capabilities, setCapabilities] = useState<NotificationCapabilityDiagnostics>(() => getNotificationCapabilities(false));
+
+  useEffect(() => {
+    if (!saveStatus) return undefined;
+
+    const timeout = window.setTimeout(() => setSaveStatus(''), 5_000);
+    return () => window.clearTimeout(timeout);
+  }, [saveStatus]);
 
   useEffect(() => {
     let isMounted = true;
@@ -928,6 +936,7 @@ function NotificationSettingsControl() {
 
     setStatus('working');
     setNote('');
+    setSaveStatus('');
 
     try {
       const permission = await Notification.requestPermission();
@@ -938,16 +947,19 @@ function NotificationSettingsControl() {
         setNote(permission === 'denied' ? 'Notifications are blocked in browser settings.' : '');
         return;
       }
+      setSaveStatus('Permission granted');
 
       const nextSubscription = await subscribeToPushNotifications();
       console.log('Disney Mayhem push subscription result', nextSubscription);
       setSubscription(nextSubscription);
       setStatus('enabled');
       setNote('');
+      setSaveStatus('Subscription saved');
     } catch (error) {
       console.warn('Disney Mayhem push subscription save failed', error);
       setStatus('error');
       setNote('Notifications could not be enabled.');
+      setSaveStatus('Subscription failed');
     }
   }
 
@@ -955,6 +967,7 @@ function NotificationSettingsControl() {
     console.log('Disney Mayhem notification toggle attempted', { enabled: false });
     setStatus('working');
     setNote('');
+    setSaveStatus('');
 
     try {
       const activeSubscription = subscription ?? (await getExistingPushSubscription());
@@ -969,44 +982,53 @@ function NotificationSettingsControl() {
     }
   }
 
+  function handleToggleNotifications() {
+    console.log('notification row clicked', { currentEnabled: isEnabled, status, isDisabled });
+    if (isDisabled) return;
+
+    if (isEnabled) {
+      console.log('notification enable/disable branch', 'disable');
+      void disableNotifications();
+      return;
+    }
+
+    console.log('notification enable/disable branch', 'enable');
+    void enableNotifications();
+  }
+
   const isBusy = status === 'checking' || status === 'working';
   const isEnabled = status === 'enabled';
-  const canEnable = canRequestNotifications(capabilities) && !isBusy;
-  const serviceWorkerCheckFailed = status === 'error' && note === 'Notification setup could not be checked.';
-  const isDisabled = isBusy || serviceWorkerCheckFailed || (!isEnabled && !canEnable);
+  const hasRequiredCapability =
+    capabilities.notificationApi &&
+    capabilities.serviceWorkerApi &&
+    capabilities.pushManagerApi &&
+    capabilities.vapidPublicKeyPresent &&
+    (!capabilities.requiresStandalonePwa || capabilities.standalonePwa);
+  const isUnavailable = !hasRequiredCapability || capabilities.notificationPermission === 'denied';
+  const isDisabled = isBusy || isUnavailable;
+
+  console.log('notification row rendered', { disabled: isDisabled, enabled: isEnabled, status });
 
   return (
-    <section aria-labelledby="notification-settings-title" className="glass-surface rounded-[1.2rem] px-4 py-3">
-      <div className="flex items-center justify-between gap-4">
+    <section aria-labelledby="notification-settings-title">
+      <button
+        type="button"
+        role="switch"
+        aria-label="Morning and goodnight notifications"
+        aria-checked={isEnabled}
+        onClick={handleToggleNotifications}
+        disabled={isDisabled}
+        className="notification-settings-row glass-surface flex w-full items-center justify-between gap-4 rounded-[1.2rem] px-4 py-3 text-left disabled:cursor-not-allowed disabled:opacity-55 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]"
+      >
         <div>
           <p id="notification-settings-title" className="text-[15px] font-black leading-tight text-white">
             Morning + Goodnight Notifications
           </p>
           <p className="mt-1 text-[13px] font-semibold leading-5 text-[#A1A1A6]">Turn on notifications</p>
         </div>
-        <label
-          className={`relative flex min-h-11 w-[52px] min-w-[52px] max-w-[52px] flex-[0_0_52px] shrink-0 items-center ${
-            isDisabled ? 'cursor-not-allowed opacity-55' : 'cursor-pointer'
-          }`}
-        >
-          <input
-            type="checkbox"
-            role="switch"
-            aria-label="Morning and goodnight notifications"
-            checked={isEnabled}
-            disabled={isDisabled}
-            onChange={() => {
-              if (isEnabled) {
-                void disableNotifications();
-              } else {
-                void enableNotifications();
-              }
-            }}
-            className="peer sr-only"
-          />
+        <span className="relative flex min-h-11 w-[52px] min-w-[52px] max-w-[52px] flex-[0_0_52px] shrink-0 items-center" aria-hidden="true">
           <span
-            aria-hidden="true"
-            className={`relative block h-8 w-[52px] min-w-[52px] max-w-[52px] flex-[0_0_52px] rounded-full transition-colors peer-focus-visible:outline peer-focus-visible:outline-4 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#0A84FF] ${
+            className={`relative block h-8 w-[52px] min-w-[52px] max-w-[52px] flex-[0_0_52px] rounded-full transition-colors ${
               isEnabled ? 'bg-[#0A84FF]' : 'bg-[rgba(120,120,128,0.24)]'
             }`}
           >
@@ -1016,14 +1038,13 @@ function NotificationSettingsControl() {
               }`}
             />
           </span>
-          <span
-            className="sr-only"
-            aria-live="polite"
-          >
-            {isEnabled ? 'Notifications enabled' : 'Notifications disabled'}
-          </span>
-        </label>
-      </div>
+        </span>
+        <span className="sr-only" aria-live="polite">
+          {isEnabled ? 'Notifications enabled' : 'Notifications disabled'}
+        </span>
+      </button>
+      {isUnavailable ? <p className="mt-2 text-[12px] font-semibold leading-5 text-[#A1A1A6]">Notifications unavailable here</p> : null}
+      {saveStatus ? <p className="mt-2 text-[12px] font-semibold leading-5 text-[#30D158]">{saveStatus}</p> : null}
       {note ? <p className="mt-2 text-[12px] font-semibold leading-5 text-[#FF9F0A]">{note}</p> : null}
     </section>
   );
