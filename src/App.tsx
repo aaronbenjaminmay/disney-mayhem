@@ -1023,9 +1023,8 @@ function NotificationSettingsControl() {
       >
         <div>
           <p id="notification-settings-title" className="text-[15px] font-black leading-tight text-white">
-            Morning + Goodnight Notifications
+            Allow Notifications
           </p>
-          <p className="mt-1 text-[13px] font-semibold leading-5 text-[#A1A1A6]">{isEnabled ? 'Turn off notifications' : 'Turn on notifications'}</p>
         </div>
         <span className="relative flex min-h-11 w-[52px] min-w-[52px] max-w-[52px] flex-[0_0_52px] shrink-0 items-center" aria-hidden="true">
           <span
