@@ -817,7 +817,7 @@ function NotificationSettingsControl() {
       if (!isPushSubscriptionSupported() || !initialCapabilities.standalonePwa) {
         if (!isMounted) return;
         setStatus('unsupported');
-        setNote('Notifications are only available after adding Disney Mayhem to your Home Screen.');
+        setNote('');
         return;
       }
 
@@ -880,7 +880,7 @@ function NotificationSettingsControl() {
 
     if (!isPushSubscriptionSupported() || !currentCapabilities.standalonePwa) {
       setStatus('unsupported');
-      setNote('Notifications are only available after adding Disney Mayhem to your Home Screen.');
+      setNote('');
       return;
     }
 
@@ -932,10 +932,9 @@ function NotificationSettingsControl() {
   const isEnabled = status === 'enabled';
   const canEnable = canRequestNotifications(capabilities) && !isBusy;
   const helperText =
-    note ||
-    (isEnabled
-      ? 'Scheduled for 7:00 AM and 10:00 PM'
-      : 'Get gentle trip reminders on your lock screen');
+    status === 'unsupported'
+      ? 'Add to Home Screen to enable notifications'
+      : note || (isEnabled ? 'Notifications on' : 'Turn on notifications');
 
   return (
     <section aria-labelledby="notification-settings-title" className="glass-surface rounded-[1.2rem] px-4 py-3">
@@ -953,15 +952,15 @@ function NotificationSettingsControl() {
           aria-checked={isEnabled}
           onClick={isEnabled ? disableNotifications : enableNotifications}
           disabled={isBusy || (!isEnabled && !canEnable)}
-          className={`relative min-h-11 min-w-[4rem] rounded-full border transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF] disabled:cursor-not-allowed disabled:opacity-55 ${
+          className={`relative h-11 w-[3.25rem] shrink-0 rounded-full border transition-colors focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF] disabled:cursor-not-allowed disabled:opacity-55 ${
             isEnabled ? 'border-[#0A84FF] bg-[#0A84FF]' : 'border-white/[0.08] bg-[#2C2C2E]/90'
           }`}
         >
           <span className="sr-only">{isEnabled ? 'Disable notifications' : 'Enable notifications'}</span>
           <span
             aria-hidden="true"
-            className={`absolute top-1/2 h-8 w-8 -translate-y-1/2 rounded-full bg-white shadow-[0_3px_10px_rgba(0,0,0,0.35)] transition-transform ${
-              isEnabled ? 'translate-x-[1.65rem]' : 'translate-x-1'
+            className={`absolute top-1/2 h-7 w-7 -translate-y-1/2 rounded-full shadow-[0_3px_10px_rgba(0,0,0,0.35)] transition-transform ${
+              isEnabled ? 'translate-x-[1.2rem] bg-white' : 'translate-x-[0.15rem] bg-[#A1A1A6]'
             }`}
           />
         </button>
