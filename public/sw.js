@@ -1,4 +1,4 @@
-const CACHE_NAME = 'disney-mayhem-shell-v1';
+const CACHE_NAME = 'disney-mayhem-shell-v2';
 const APP_SHELL = [
   './',
   './index.html',
@@ -58,6 +58,49 @@ self.addEventListener('fetch', (event) => {
 
         return response;
       });
+    }),
+  );
+});
+
+self.addEventListener('push', (event) => {
+  let payload = {};
+
+  try {
+    payload = event.data ? event.data.json() : {};
+  } catch {
+    payload = {
+      title: event.data?.text() || 'Disney Mayhem',
+    };
+  }
+
+  const title = payload.title || 'Disney Mayhem';
+  const options = {
+    body: payload.body || '',
+    icon: './icon-192.png',
+    badge: './favicon.png',
+    data: {
+      url: payload.url || './',
+    },
+  };
+
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+
+  const targetUrl = new URL(event.notification.data?.url || './', self.registration.scope).href;
+
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      const matchingClient = clients.find((client) => client.url.startsWith(self.registration.scope));
+
+      if (matchingClient) {
+        matchingClient.focus();
+        return matchingClient.navigate(targetUrl);
+      }
+
+      return self.clients.openWindow(targetUrl);
     }),
   );
 });

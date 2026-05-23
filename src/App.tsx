@@ -6,6 +6,14 @@ import { StatusButton } from './components/StatusButton';
 import { AppTab, Tabs } from './components/Tabs';
 import { tripDays as baseTripDays, tripEndDate, tripStartDate } from './data/tripData';
 import { useTripStorage } from './hooks/useTripStorage';
+import {
+  disablePushSubscription,
+  getExistingPushSubscription,
+  getNotificationPermission,
+  isPushSubscriptionConfigured,
+  isPushSubscriptionSupported,
+  subscribeToPushNotifications,
+} from './lib/pushSubscriptions';
 import type { Activity, EditableActivityFields, EditableItemFields, ItemPlacement, ItemStatus, LandBlock, LandGroupOrder, ParkName, ReservationDayCard, TripDay, TripItem } from './types';
 import {
   createActivityFromFields,
@@ -752,6 +760,149 @@ function TodayIntelCard({
   );
 }
 
+type NotificationControlStatus = 'checking' | 'unsupported' | 'unconfigured' | 'denied' | 'disabled' | 'enabled' | 'working' | 'error';
+
+function NotificationSettingsControl() {
+  const [status, setStatus] = useState<NotificationControlStatus>('checking');
+  const [subscription, setSubscription] = useState<PushSubscription | null>(null);
+  const [note, setNote] = useState('');
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function checkSubscription() {
+      if (!isPushSubscriptionSupported()) {
+        if (!isMounted) return;
+        setStatus('unsupported');
+        setNote('Notifications are only available after adding Disney Mayhem to your Home Screen.');
+        return;
+      }
+
+      if (!isPushSubscriptionConfigured()) {
+        if (!isMounted) return;
+        setStatus('unconfigured');
+        setNote('Notifications are not configured yet.');
+        return;
+      }
+
+      const permission = getNotificationPermission();
+      if (permission === 'denied') {
+        if (!isMounted) return;
+        setStatus('denied');
+        setNote('Notifications are blocked for this browser.');
+        return;
+      }
+
+      try {
+        const existingSubscription = await getExistingPushSubscription();
+        if (!isMounted) return;
+        setSubscription(existingSubscription);
+        setStatus(existingSubscription ? 'enabled' : 'disabled');
+        setNote('');
+      } catch (error) {
+        console.warn('Disney Mayhem push subscription check failed', error);
+        if (!isMounted) return;
+        setStatus('error');
+        setNote('Notification setup could not be checked.');
+      }
+    }
+
+    void checkSubscription();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  async function enableNotifications() {
+    if (!isPushSubscriptionSupported()) {
+      setStatus('unsupported');
+      setNote('Notifications are only available after adding Disney Mayhem to your Home Screen.');
+      return;
+    }
+
+    if (!isPushSubscriptionConfigured()) {
+      setStatus('unconfigured');
+      setNote('Notifications are not configured yet.');
+      return;
+    }
+
+    setStatus('working');
+    setNote('');
+
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        setStatus(permission === 'denied' ? 'denied' : 'disabled');
+        setNote(permission === 'denied' ? 'Notifications are blocked for this browser.' : '');
+        return;
+      }
+
+      const nextSubscription = await subscribeToPushNotifications();
+      setSubscription(nextSubscription);
+      setStatus('enabled');
+      setNote('');
+    } catch (error) {
+      console.warn('Disney Mayhem push subscription save failed', error);
+      setStatus('error');
+      setNote('Notification setup could not be saved.');
+    }
+  }
+
+  async function disableNotifications() {
+    setStatus('working');
+    setNote('');
+
+    try {
+      const activeSubscription = subscription ?? (await getExistingPushSubscription());
+      if (activeSubscription) await disablePushSubscription(activeSubscription);
+      setSubscription(null);
+      setStatus('disabled');
+    } catch (error) {
+      console.warn('Disney Mayhem push subscription disable failed', error);
+      setStatus('error');
+      setNote('Notifications could not be disabled.');
+    }
+  }
+
+  const isBusy = status === 'checking' || status === 'working';
+  const isEnabled = status === 'enabled';
+  const canEnable = status === 'disabled' || status === 'error';
+  const buttonLabel = isEnabled ? 'Disable notifications' : isBusy ? 'Saving...' : 'Enable notifications';
+  const helperText =
+    note ||
+    (isEnabled
+      ? 'Notifications enabled'
+      : 'Future 7:00 AM and 10:00 PM messages can use this subscription.');
+
+  return (
+    <section aria-labelledby="notification-settings-title" className="glass-surface rounded-[1.35rem] px-4 py-4">
+      <div className="flex flex-col gap-4 min-[520px]:flex-row min-[520px]:items-center min-[520px]:justify-between">
+        <div>
+          <p id="notification-settings-title" className="text-[15px] font-black leading-tight text-white">
+            Morning + Goodnight Notifications
+          </p>
+          <p className="mt-1 text-[13px] font-semibold leading-5 text-[#A1A1A6]">{helperText}</p>
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          {isEnabled ? (
+            <span className="rounded-full border border-[#0A84FF]/25 bg-[#0A84FF]/15 px-3 py-2 text-[12px] font-black text-[#0A84FF]">
+              Notifications enabled
+            </span>
+          ) : null}
+          <button
+            type="button"
+            onClick={isEnabled ? disableNotifications : enableNotifications}
+            disabled={isBusy || (!isEnabled && !canEnable)}
+            className="min-h-11 rounded-full border border-white/[0.08] bg-[#1C1C1E]/80 px-4 py-2 text-[14px] font-black text-white transition hover:bg-[#2C2C2E] disabled:cursor-not-allowed disabled:opacity-55 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]"
+          >
+            {buttonLabel}
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function TodayScreen({
   day,
   activeItem,
@@ -825,6 +976,9 @@ function TodayScreen({
           <div className="mt-4">
             <TodayIntelCard day={day} statuses={statuses} phase={phase} countdown={countdown} />
           </div>
+          <div className="mt-3">
+            <NotificationSettingsControl />
+          </div>
           <div className="mt-4 grid grid-cols-1 gap-3 min-[390px]:grid-cols-2">
             {days.map((tripDay) => {
               const presentation = getDayPresentation(tripDay);
@@ -897,6 +1051,9 @@ function TodayScreen({
 
       <section className="section-rise px-4 pb-8">
         <TodayIntelCard day={day} statuses={statuses} phase={phase} countdown={countdown} />
+        <div className="mt-3">
+          <NotificationSettingsControl />
+        </div>
       </section>
 
       <section aria-labelledby="now-heading" className="section-rise px-4">
