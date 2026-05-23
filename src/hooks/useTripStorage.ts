@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { Activity, EditableActivityFields, EditableItemFields, ItemStatus, LandGroupOrder, PersistedState, TripItem } from '../types';
+import type { Activity, EditableActivityFields, EditableItemFields, ItemStatus, LandGroupOrder, PersistedState, ReservationDayCard, TripItem } from '../types';
 import {
   fetchSupabaseStatusEdits,
   saveSupabaseActivityAdd,
@@ -10,6 +10,7 @@ import {
   saveSupabaseItemAdd,
   saveSupabaseItemDelete,
   saveSupabaseItemEdit,
+  saveSupabaseReservationDayCard,
   saveSupabaseStatus,
   type SupabaseStatusEdits,
 } from '../lib/tripEditsSync';
@@ -25,6 +26,7 @@ const defaultState: PersistedState = {
   deletedActivityIds: [],
   deletedLandGroupIds: [],
   landGroupOrders: {},
+  reservationDayCards: {},
 };
 
 function loadState(): PersistedState {
@@ -43,6 +45,7 @@ function loadState(): PersistedState {
       deletedActivityIds: parsed.deletedActivityIds ?? [],
       deletedLandGroupIds: parsed.deletedLandGroupIds ?? [],
       landGroupOrders: parsed.landGroupOrders ?? {},
+      reservationDayCards: parsed.reservationDayCards ?? {},
     };
   } catch {
     return defaultState;
@@ -106,6 +109,7 @@ export function useTripStorage() {
         const nextItemEdits = preferSupabaseSnapshot ? edits.itemEdits : { ...current.itemEdits, ...edits.itemEdits };
         const nextAddedItems = preferSupabaseSnapshot ? edits.addedItems : mergeAddedItems(current.addedItems, edits.addedItems);
         const nextDeletedItemIds = preferSupabaseSnapshot ? edits.deletedItemIds : [...new Set([...current.deletedItemIds, ...edits.deletedItemIds])];
+        const nextReservationDayCards = preferSupabaseSnapshot ? edits.reservationDayCards : { ...current.reservationDayCards, ...edits.reservationDayCards };
         if (
           statusesAreEqual(current.statuses, nextStatuses) &&
           JSON.stringify(current.itemEdits) === JSON.stringify(nextItemEdits) &&
@@ -115,7 +119,8 @@ export function useTripStorage() {
           JSON.stringify(current.addedActivities) === JSON.stringify(nextAddedActivities) &&
           JSON.stringify(current.deletedActivityIds) === JSON.stringify(nextDeletedActivityIds) &&
           JSON.stringify(current.deletedLandGroupIds) === JSON.stringify(nextDeletedLandGroupIds) &&
-          JSON.stringify(current.landGroupOrders) === JSON.stringify(nextLandGroupOrders)
+          JSON.stringify(current.landGroupOrders) === JSON.stringify(nextLandGroupOrders) &&
+          JSON.stringify(current.reservationDayCards) === JSON.stringify(nextReservationDayCards)
         ) {
           return current;
         }
@@ -131,6 +136,7 @@ export function useTripStorage() {
           deletedActivityIds: nextDeletedActivityIds,
           deletedLandGroupIds: nextDeletedLandGroupIds,
           landGroupOrders: nextLandGroupOrders,
+          reservationDayCards: nextReservationDayCards,
         };
       });
     }
@@ -180,6 +186,7 @@ export function useTripStorage() {
       deletedActivityIds: state.deletedActivityIds,
       deletedLandGroupIds: state.deletedLandGroupIds,
       landGroupOrders: state.landGroupOrders,
+      reservationDayCards: state.reservationDayCards,
       setStatus(id: string, status: ItemStatus) {
         setState((current) => ({
           ...current,
@@ -285,6 +292,16 @@ export function useTripStorage() {
           },
         }));
         void saveSupabaseLandGroupOrder(groupId, order);
+      },
+      saveReservationDayCard(card: ReservationDayCard) {
+        setState((current) => ({
+          ...current,
+          reservationDayCards: {
+            ...current.reservationDayCards,
+            [card.date]: card,
+          },
+        }));
+        void saveSupabaseReservationDayCard(card);
       },
     }),
     [state],

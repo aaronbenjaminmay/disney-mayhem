@@ -117,6 +117,13 @@ export type LandGroupOrder = {
   displayOrder: number;
 };
 
+export type ReservationDayCard = {
+  id: string;
+  date: string;
+  title?: string;
+  notes?: string;
+};
+
 export type TripDay = {
   id: string;
   date: string;
@@ -139,6 +146,7 @@ export type PersistedState = {
   deletedActivityIds: string[];
   deletedLandGroupIds: string[];
   landGroupOrders: Record<string, LandGroupOrder>;
+  reservationDayCards: Record<string, ReservationDayCard>;
 };
 
 export type EditableItemFields = {

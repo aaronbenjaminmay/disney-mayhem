@@ -1,4 +1,4 @@
-import type { Activity, EditableActivityFields, EditableItemFields, ItemStatus, LandGroupOrder, TripItem } from '../types';
+import type { Activity, EditableActivityFields, EditableItemFields, ItemStatus, LandGroupOrder, ReservationDayCard, TripItem } from '../types';
 import { createItemFromFields } from '../utils/itineraryEdits';
 import { supabase, tripId } from './supabaseClient';
 
@@ -12,7 +12,7 @@ type TripEditRow = {
   updated_at?: string | null;
   payload?: {
     status?: ItemStatus;
-    action?: 'edit' | 'add' | 'delete' | 'delete-land-group' | 'order-land-group';
+    action?: 'edit' | 'add' | 'delete' | 'delete-land-group' | 'order-land-group' | 'save-reservation-day-card';
     groupId?: string;
     landGroupId?: string;
     parentItemId?: string;
@@ -24,6 +24,7 @@ type TripEditRow = {
     activityId?: string;
     activityIds?: string[];
     landGroupOrder?: LandGroupOrder;
+    reservationDayCard?: ReservationDayCard;
     saved_at?: string;
   } | null;
 };
@@ -38,6 +39,7 @@ export type SupabaseStatusEdits = {
   itemEdits: Record<string, EditableItemFields>;
   addedItems: Record<string, TripItem[]>;
   deletedItemIds: string[];
+  reservationDayCards: Record<string, ReservationDayCard>;
   count: number;
   latestUpdatedAt: string | null;
 };
@@ -89,6 +91,7 @@ export async function fetchSupabaseStatusEdits(sinceUpdatedAt?: string | null): 
   const itemEdits: Record<string, EditableItemFields> = {};
   const addedItems: Record<string, TripItem[]> = {};
   const deletedItemIds: string[] = [];
+  const reservationDayCards: Record<string, ReservationDayCard> = {};
   let latestUpdatedAt: string | null = sinceUpdatedAt ?? null;
 
   const rows = [...((data as TripEditRow[] | null) ?? [])].sort((a, b) => {
@@ -178,6 +181,9 @@ export async function fetchSupabaseStatusEdits(sinceUpdatedAt?: string | null): 
     if (row.type === itemEditType && row.item_id && row.payload?.action === 'delete') {
       deletedItemIds.push(row.item_id);
     }
+    if (row.type === itemEditType && row.payload?.action === 'save-reservation-day-card' && row.payload.reservationDayCard) {
+      reservationDayCards[row.payload.reservationDayCard.date] = row.payload.reservationDayCard;
+    }
     if (row.updated_at && (!latestUpdatedAt || Date.parse(row.updated_at) > Date.parse(latestUpdatedAt))) {
       latestUpdatedAt = row.updated_at;
     }
@@ -193,6 +199,7 @@ export async function fetchSupabaseStatusEdits(sinceUpdatedAt?: string | null): 
     itemEdits,
     addedItems,
     deletedItemIds,
+    reservationDayCards,
     count: rows.length,
     latestUpdatedAt,
   };
@@ -249,6 +256,13 @@ export async function saveSupabaseItemAdd(dayId: string, item: TripItem): Promis
 export async function saveSupabaseItemDelete(itemId: string): Promise<void> {
   await saveSupabaseItemRow(itemId, {
     action: 'delete',
+  });
+}
+
+export async function saveSupabaseReservationDayCard(card: ReservationDayCard): Promise<void> {
+  await saveSupabaseItemRow(card.id, {
+    action: 'save-reservation-day-card',
+    reservationDayCard: card,
   });
 }
 

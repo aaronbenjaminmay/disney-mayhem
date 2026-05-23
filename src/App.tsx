@@ -6,7 +6,7 @@ import { StatusButton } from './components/StatusButton';
 import { AppTab, Tabs } from './components/Tabs';
 import { tripDays as baseTripDays, tripEndDate, tripStartDate } from './data/tripData';
 import { useTripStorage } from './hooks/useTripStorage';
-import type { Activity, EditableActivityFields, EditableItemFields, ItemPlacement, ItemStatus, LandBlock, LandGroupOrder, ParkName, TripDay, TripItem } from './types';
+import type { Activity, EditableActivityFields, EditableItemFields, ItemPlacement, ItemStatus, LandBlock, LandGroupOrder, ParkName, ReservationDayCard, TripDay, TripItem } from './types';
 import {
   createActivityFromFields,
   createItemFromFields,
@@ -134,8 +134,20 @@ function getItemConfirmationNumber(item: TripItem): string | undefined {
   return 'confirmationNumber' in item ? item.confirmationNumber : undefined;
 }
 
-function groupReservationsByDay(reservations: ReturnType<typeof getReservations>) {
-  const groups: { day: TripDay; items: TripItem[] }[] = [];
+function makeReservationDay(date: string, card?: ReservationDayCard): TripDay {
+  return {
+    id: `reservation-day-${date}`,
+    date,
+    label: card?.title?.trim() || 'Reservation Day',
+    park: 'Travel Day',
+    location: '',
+    notes: card?.notes,
+    items: [],
+  };
+}
+
+function groupReservationsByDay(reservations: ReturnType<typeof getReservations>, dayCards: Record<string, ReservationDayCard>) {
+  const groups: { day: TripDay; items: TripItem[]; card?: ReservationDayCard }[] = [];
 
   reservations.forEach(({ day, item }) => {
     const existing = groups.find((group) => group.day.id === day.id);
@@ -145,6 +157,21 @@ function groupReservationsByDay(reservations: ReturnType<typeof getReservations>
     }
 
     groups.push({ day, items: [item] });
+  });
+
+  Object.values(dayCards).forEach((card) => {
+    const existing = groups.find((group) => group.day.date === card.date);
+    if (existing) {
+      existing.card = card;
+      existing.day = {
+        ...existing.day,
+        label: card.title?.trim() || existing.day.label,
+        notes: card.notes?.trim() || existing.day.notes,
+      };
+      return;
+    }
+
+    groups.push({ day: makeReservationDay(card.date, card), items: [], card });
   });
 
   return groups
@@ -1067,6 +1094,12 @@ type ReservationAddChoiceState = {
   dayId?: string;
 };
 
+type ReservationDayCardAddState = {
+  date: string;
+  title: string;
+  notes: string;
+};
+
 type AddLandCardState = {
   dayId: string;
   land: string;
@@ -1228,11 +1261,13 @@ function AddChoiceSheet({
 
 function ReservationAddChoiceSheet({
   day,
-  onChoose,
+  onChooseReservation,
+  onChooseDayCard,
   onCancel,
 }: {
   day?: TripDay;
-  onChoose: () => void;
+  onChooseReservation: () => void;
+  onChooseDayCard: () => void;
   onCancel: () => void;
 }) {
   useEffect(() => {
@@ -1269,7 +1304,7 @@ function ReservationAddChoiceSheet({
         <div className="mt-5 grid gap-3">
           <button
             type="button"
-            onClick={onChoose}
+            onClick={onChooseReservation}
             className="flex min-h-16 items-center gap-3 rounded-[1.25rem] border border-white/[0.08] bg-[#1C1C1E]/70 px-4 py-3 text-left transition hover:bg-[#2C2C2E]/70 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]"
           >
             <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#111111] text-[#A1A1A6]">
@@ -1279,6 +1314,100 @@ function ReservationAddChoiceSheet({
               <span className="block text-[17px] font-black text-white">Add reservation</span>
               <span className="mt-1 block text-[14px] text-[#A1A1A6]">Dining, activities, or other fixed bookings.</span>
             </span>
+          </button>
+          <button
+            type="button"
+            onClick={onChooseDayCard}
+            className="flex min-h-16 items-center gap-3 rounded-[1.25rem] border border-white/[0.08] bg-[#1C1C1E]/70 px-4 py-3 text-left transition hover:bg-[#2C2C2E]/70 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]"
+          >
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#111111] text-[#A1A1A6]">
+              <LucideIcon name="plus" size={20} />
+            </span>
+            <span>
+              <span className="block text-[17px] font-black text-white">Add day card</span>
+              <span className="mt-1 block text-[14px] text-[#A1A1A6]">Create a new day group for reservations.</span>
+            </span>
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function ReservationDayCardSheet({
+  draft,
+  onChange,
+  onSave,
+  onCancel,
+}: {
+  draft: ReservationDayCardAddState;
+  onChange: (draft: ReservationDayCardAddState) => void;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') onCancel();
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onCancel]);
+
+  return (
+    <div className="fixed inset-0 z-40 flex items-end bg-black/70 px-3 py-4 sm:items-center sm:justify-center" role="presentation">
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="reservation-day-card-title"
+        className="glass-surface screen-fade w-full max-w-xl rounded-[2rem] p-5"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-black uppercase tracking-wide text-[#0A84FF]">Reservations</p>
+            <h2 id="reservation-day-card-title" className="mt-1 text-2xl font-black text-white">
+              Add day card
+            </h2>
+          </div>
+          <button type="button" onClick={onCancel} className="ios-icon-button" aria-label="Close" title="Close">
+            <LucideIcon name="x" size={20} />
+          </button>
+        </div>
+
+        <div className="mt-5 space-y-4">
+          <label className="block">
+            <span className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Date</span>
+            <input
+              type="date"
+              value={draft.date}
+              onChange={(event) => onChange({ ...draft, date: event.target.value })}
+              className="mt-2 min-h-12 w-full rounded-2xl border border-[#2C2C2E] bg-[#111111] px-4 text-lg font-bold text-white outline-none focus:border-[#0A84FF] focus:ring-4 focus:ring-[#0A84FF]/30"
+            />
+          </label>
+          <label className="block">
+            <span className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Day title</span>
+            <input
+              value={draft.title}
+              onChange={(event) => onChange({ ...draft, title: event.target.value })}
+              className="mt-2 min-h-12 w-full rounded-2xl border border-[#2C2C2E] bg-[#111111] px-4 text-lg font-bold text-white outline-none focus:border-[#0A84FF] focus:ring-4 focus:ring-[#0A84FF]/30"
+            />
+          </label>
+          <label className="block">
+            <span className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Notes</span>
+            <textarea
+              value={draft.notes}
+              onChange={(event) => onChange({ ...draft, notes: event.target.value })}
+              className="mt-2 min-h-28 w-full rounded-2xl border border-[#2C2C2E] bg-[#111111] px-4 py-3 text-lg font-bold text-white outline-none focus:border-[#0A84FF] focus:ring-4 focus:ring-[#0A84FF]/30"
+            />
+          </label>
+        </div>
+
+        <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-end">
+          <button type="button" onClick={onCancel} className="min-h-12 rounded-full border border-[#3A3A3C] bg-[#1C1C1E] px-5 py-2 font-black text-white focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]">
+            Cancel
+          </button>
+          <button type="button" onClick={onSave} className="min-h-12 rounded-full bg-[#0A84FF] px-5 py-2 font-black text-black focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]">
+            Save
           </button>
         </div>
       </section>
@@ -1300,6 +1429,7 @@ function ItemEditorSheet({
   onDelete: () => void;
 }) {
   const draft = editor.draft;
+  const isReservationDraft = draft.type === 'reservation';
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -1441,8 +1571,8 @@ function ItemEditorSheet({
           </label>
         </div>
 
-        <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-between">
-          {editor.mode === 'edit' ? (
+        <div className={`mt-5 flex flex-col gap-3 sm:flex-row ${editor.mode === 'edit' && !isReservationDraft ? 'sm:justify-between' : 'sm:justify-end'}`}>
+          {editor.mode === 'edit' && !isReservationDraft ? (
             <button
               type="button"
               onClick={onDelete}
@@ -1470,6 +1600,19 @@ function ItemEditorSheet({
             </button>
           </div>
         </div>
+
+        {editor.mode === 'edit' && isReservationDraft ? (
+          <div className="mt-6 border-t border-white/[0.08] pt-5">
+            <button
+              type="button"
+              onClick={onDelete}
+              className="flex min-h-12 w-full items-center justify-center gap-2 rounded-full border border-[#FF453A] bg-[#FF453A]/15 px-5 py-2 font-black text-[#FF453A] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#FF453A] sm:w-auto"
+            >
+              <LucideIcon name="trash" size={20} />
+              Delete reservation
+            </button>
+          </div>
+        ) : null}
       </section>
     </div>
   );
@@ -2416,20 +2559,20 @@ function AllDaysScreen({
 
 function ReservationsScreen({
   reservations,
+  reservationDayCards,
   onEditItem,
   onOpenAddOptions,
   onAddReservationForDay,
-  onDeleteItem,
   onBackToDashboard,
 }: {
   reservations: ReturnType<typeof getReservations>;
+  reservationDayCards: Record<string, ReservationDayCard>;
   onEditItem: (dayId: string, item: TripItem) => void;
   onOpenAddOptions: () => void;
-  onAddReservationForDay: (dayId: string) => void;
-  onDeleteItem: (itemId: string) => void;
+  onAddReservationForDay: (date: string) => void;
   onBackToDashboard: () => void;
 }) {
-  const reservationGroups = groupReservationsByDay(reservations);
+  const reservationGroups = groupReservationsByDay(reservations, reservationDayCards);
   const sectionRef = useRef<HTMLElement | null>(null);
   const headerRef = useRef<HTMLElement | null>(null);
   const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
@@ -2527,6 +2670,7 @@ function ReservationsScreen({
                   {day.label}
                 </h2>
                 <p className="mt-1 text-sm font-semibold text-[#A1A1A6]">{day.park}</p>
+                {day.notes ? <p className="mt-2 text-sm leading-5 text-[#A1A1A6]">{day.notes}</p> : null}
               </div>
               <div className="flex shrink-0 items-center gap-2">
                 <p className="rounded-full border border-white/[0.08] bg-[#111111]/70 px-3 py-1 text-[12px] font-black text-[#A1A1A6]">
@@ -2534,7 +2678,7 @@ function ReservationsScreen({
                 </p>
                 <button
                   type="button"
-                  onClick={() => onAddReservationForDay(day.id)}
+                  onClick={() => onAddReservationForDay(day.date)}
                   className="ios-icon-button"
                   aria-label={`Add reservation for ${day.label}`}
                   title={`Add reservation for ${day.label}`}
@@ -2564,19 +2708,11 @@ function ReservationsScreen({
                       >
                         <LucideIcon name="pencil" size={20} />
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => onDeleteItem(item.id)}
-                        className="ios-icon-button ios-icon-button-danger"
-                        aria-label="Delete reservation"
-                        title="Delete reservation"
-                      >
-                        <LucideIcon name="trash" size={20} />
-                      </button>
                     </div>
                   </div>
                 </article>
               ))}
+              {items.length === 0 ? <p className="py-4 text-[15px] text-[#A1A1A6]">No reservations yet.</p> : null}
             </div>
           </section>
         ))}
@@ -2594,6 +2730,7 @@ export default function App() {
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [addChoice, setAddChoice] = useState<AddChoiceState | null>(null);
   const [reservationAddChoice, setReservationAddChoice] = useState<ReservationAddChoiceState | null>(null);
+  const [reservationDayCardAdd, setReservationDayCardAdd] = useState<ReservationDayCardAddState | null>(null);
   const [landCardAdd, setLandCardAdd] = useState<AddLandCardState | null>(null);
   const [landEditor, setLandEditor] = useState<LandEditorState | null>(null);
   const [landDelete, setLandDelete] = useState<LandDeleteState | null>(null);
@@ -2790,14 +2927,15 @@ export default function App() {
     setReservationAddChoice({ dayId });
   }
 
-  function openAddReservation(dayId?: string) {
-    const day = dayId ? tripDays.find((tripDay) => tripDay.id === dayId) : activeState.day;
+  function openAddReservation(dateOrDayId?: string) {
+    const day = dateOrDayId ? tripDays.find((tripDay) => tripDay.id === dateOrDayId || tripDay.date === dateOrDayId) : activeState.day;
     const targetDay = day ?? activeState.day;
+    const targetDate = day?.date ?? dateOrDayId ?? activeState.day.date;
     setEditor({
       mode: 'add',
       dayId: targetDay.id,
       draft: {
-        date: targetDay.date,
+        date: targetDate,
         time: '',
         endTime: '',
         title: '',
@@ -2815,6 +2953,35 @@ export default function App() {
     const { dayId } = reservationAddChoice;
     setReservationAddChoice(null);
     openAddReservation(dayId);
+  }
+
+  function chooseReservationDayCardAdd() {
+    const day = reservationAddChoice?.dayId ? tripDays.find((tripDay) => tripDay.id === reservationAddChoice.dayId || tripDay.date === reservationAddChoice.dayId) : undefined;
+    setReservationAddChoice(null);
+    setReservationDayCardAdd({
+      date: day?.date ?? activeState.day.date,
+      title: '',
+      notes: '',
+    });
+  }
+
+  function saveReservationDayCard() {
+    if (!reservationDayCardAdd) return;
+    const date = reservationDayCardAdd.date;
+    if (!date) {
+      window.alert('Date is required.');
+      return;
+    }
+
+    const existingDay = tripDays.find((day) => day.date === date);
+    const existingCard = tripStorage.reservationDayCards[date];
+    tripStorage.saveReservationDayCard({
+      id: existingCard?.id ?? `reservation-day-card-${date}`,
+      date,
+      title: reservationDayCardAdd.title.trim() || existingCard?.title || existingDay?.label,
+      notes: reservationDayCardAdd.notes.trim() || existingCard?.notes,
+    });
+    setReservationDayCardAdd(null);
   }
 
   function openLandEditor(day: TripDay, item: TimelineActivityBlock, group: TimelineLandGroup) {
@@ -3158,13 +3325,10 @@ export default function App() {
         {activeTab === 'reservations' ? (
           <ReservationsScreen
             reservations={reservations}
+            reservationDayCards={tripStorage.reservationDayCards}
             onEditItem={openEditItem}
             onOpenAddOptions={() => openReservationAddOptions()}
             onAddReservationForDay={openAddReservation}
-            onDeleteItem={(itemId) => {
-              const reservation = reservations.find(({ item }) => item.id === itemId);
-              requestItemDelete(itemId, reservation?.item.title ?? 'Reservation');
-            }}
             onBackToDashboard={openDashboard}
           />
         ) : null}
@@ -3189,8 +3353,17 @@ export default function App() {
       {reservationAddChoice ? (
         <ReservationAddChoiceSheet
           day={reservationAddChoice.dayId ? tripDays.find((day) => day.id === reservationAddChoice.dayId) : undefined}
-          onChoose={chooseReservationAddType}
+          onChooseReservation={chooseReservationAddType}
+          onChooseDayCard={chooseReservationDayCardAdd}
           onCancel={() => setReservationAddChoice(null)}
+        />
+      ) : null}
+      {reservationDayCardAdd ? (
+        <ReservationDayCardSheet
+          draft={reservationDayCardAdd}
+          onChange={setReservationDayCardAdd}
+          onSave={saveReservationDayCard}
+          onCancel={() => setReservationDayCardAdd(null)}
         />
       ) : null}
       {landCardAdd ? (
