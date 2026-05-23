@@ -39,6 +39,20 @@ type TimelineActivityBlock = TripItem & {
 const warnedUnknownStatusIds = new Set<string>();
 const warnedLandGroupMismatchIds = new Set<string>();
 
+function normalizeDisplayText(value?: string): string {
+  return (value ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function isDuplicateDisplayText(primary?: string, secondary?: string): boolean {
+  const normalizedPrimary = normalizeDisplayText(primary);
+  const normalizedSecondary = normalizeDisplayText(secondary);
+  return Boolean(normalizedPrimary && normalizedSecondary && normalizedPrimary === normalizedSecondary);
+}
+
+function shouldShowSecondaryText(primary?: string, secondary?: string): boolean {
+  return Boolean((secondary ?? '').trim()) && !isDuplicateDisplayText(primary, secondary);
+}
+
 function hasTimelineActivityBlock(item: TripItem): item is TimelineActivityBlock {
   return 'activities' in item && Array.isArray(item.activities);
 }
@@ -138,7 +152,7 @@ function makeReservationDay(date: string, card?: ReservationDayCard): TripDay {
   return {
     id: `reservation-day-${date}`,
     date,
-    label: card?.title?.trim() || 'Reservation Day',
+    label: card?.title?.trim() || formatDateLabel(date),
     park: 'Travel Day',
     location: '',
     notes: card?.notes,
@@ -180,6 +194,14 @@ function groupReservationsByDay(reservations: ReturnType<typeof getReservations>
       ...group,
       items: [...group.items].sort((left, right) => getItemStart(left) - getItemStart(right)),
     }));
+}
+
+function getReservationGroupTitle(day: TripDay, card?: ReservationDayCard): string {
+  const cardTitle = card?.title?.trim();
+  if (cardTitle && normalizeDisplayText(cardTitle) !== 'travel day') return cardTitle;
+  if (day.id.startsWith('reservation-day-')) return formatDateLabel(day.date);
+  if (day.label.trim()) return day.label;
+  return formatDateLabel(day.date);
 }
 
 function addMinutesToTime(time: string, minutesToAdd: number): string {
@@ -271,18 +293,21 @@ function DashboardTile({
   icon: LucideIconName;
   onClick: () => void;
 }) {
+  const showSubtitle = shouldShowSecondaryText(title, subtitle);
+  const accessibleLabel = showSubtitle ? `${title}. ${subtitle}` : title;
+
   return (
     <button
       type="button"
       onClick={onClick}
       className="glass-surface min-h-28 rounded-[1.35rem] px-4 py-4 text-left transition hover:border-white/15 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]"
-      aria-label={`${title}. ${subtitle}`}
+      aria-label={accessibleLabel}
     >
       <span className="flex items-center gap-3">
         <LucideIcon name={icon} size={24} className="shrink-0 text-[#A1A1A6]" />
         <span>
           <span className="block text-[17px] font-black leading-tight text-white">{title}</span>
-          <span className="mt-1 block text-[13px] font-semibold leading-snug text-[#A1A1A6]">{subtitle}</span>
+          {showSubtitle ? <span className="mt-1 block text-[13px] font-semibold leading-snug text-[#A1A1A6]">{subtitle}</span> : null}
         </span>
       </span>
     </button>
@@ -1005,6 +1030,8 @@ function CompactItem({
 }) {
   const status = statuses[getItemStatusKey(item)];
   const nextActivity = findNextActivity(item, statuses);
+  const displayLocation = getItemDisplayLocation(item);
+  const showLocation = shouldShowSecondaryText(item.title, displayLocation);
 
   return (
     <article className={`py-4 ${hasTimelineActivityBlock(item) ? 'glass-surface rounded-[1.5rem] p-4' : ''}`}>
@@ -1025,7 +1052,7 @@ function CompactItem({
           </button>
         ) : null}
       </div>
-      <p className="mt-2 text-[15px] text-[#A1A1A6]">{getItemDisplayLocation(item)}</p>
+      {showLocation ? <p className="mt-2 text-[15px] text-[#A1A1A6]">{displayLocation}</p> : null}
       {nextActivity ? <p className="mt-3 text-[14px] font-bold text-[#BF5AF2]">Next: {nextActivity.title}</p> : null}
     </article>
   );
@@ -2657,65 +2684,72 @@ function ReservationsScreen({
       </header>
 
       <div className="space-y-8">
-        {reservationGroups.map(({ day, items }) => (
-          <section
-            key={day.id}
-            aria-labelledby={`${day.id}-reservations-heading`}
-            className="glass-surface rounded-[1.35rem] px-4 py-4"
-          >
-            <div className="flex items-start justify-between gap-4 pb-4">
-              <div>
-                <p className="text-[12px] font-black uppercase tracking-[0.16em] text-[#0A84FF]">{formatDateLabel(day.date)}</p>
-                <h2 id={`${day.id}-reservations-heading`} className="mt-1 text-[20px] font-black leading-tight text-white">
-                  {day.label}
-                </h2>
-                <p className="mt-1 text-sm font-semibold text-[#A1A1A6]">{day.park}</p>
-                {day.notes ? <p className="mt-2 text-sm leading-5 text-[#A1A1A6]">{day.notes}</p> : null}
+        {reservationGroups.map(({ day, items, card }) => {
+          const title = getReservationGroupTitle(day, card);
+
+          return (
+            <section
+              key={day.id}
+              aria-labelledby={`${day.id}-reservations-heading`}
+              className="glass-surface rounded-[1.35rem] px-4 py-4"
+            >
+              <div className="flex items-start justify-between gap-4 pb-4">
+                <div>
+                  <p className="text-[12px] font-black uppercase tracking-[0.16em] text-[#0A84FF]">{formatDateLabel(day.date)}</p>
+                  <h2 id={`${day.id}-reservations-heading`} className="mt-1 text-[20px] font-black leading-tight text-white">
+                    {title}
+                  </h2>
+                  {day.notes ? <p className="mt-2 text-sm leading-5 text-[#A1A1A6]">{day.notes}</p> : null}
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <p className="rounded-full border border-white/[0.08] bg-[#111111]/70 px-3 py-1 text-[12px] font-black text-[#A1A1A6]">
+                    {items.length} {items.length === 1 ? 'plan' : 'plans'}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => onAddReservationForDay(day.date)}
+                    className="ios-icon-button"
+                    aria-label={`Add reservation for ${title}`}
+                    title={`Add reservation for ${title}`}
+                  >
+                    <LucideIcon name="plus" size={20} />
+                  </button>
+                </div>
               </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <p className="rounded-full border border-white/[0.08] bg-[#111111]/70 px-3 py-1 text-[12px] font-black text-[#A1A1A6]">
-                  {items.length} {items.length === 1 ? 'plan' : 'plans'}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => onAddReservationForDay(day.date)}
-                  className="ios-icon-button"
-                  aria-label={`Add reservation for ${day.label}`}
-                  title={`Add reservation for ${day.label}`}
-                >
-                  <LucideIcon name="plus" size={20} />
-                </button>
+              <div className="divide-y divide-[#2C2C2E]/70">
+                {items.map((item) => {
+                  const showLocation = shouldShowSecondaryText(item.title, item.location);
+
+                  return (
+                    <article key={item.id} className="py-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-[12px] font-black uppercase tracking-[0.16em] text-[#A1A1A6]">{formatTimeRange(item)}</p>
+                          <h3 className="mt-2 text-xl font-black leading-tight text-white">{item.title}</h3>
+                          {showLocation ? <p className="mt-1 text-sm font-semibold text-[#A1A1A6]">{item.location}</p> : null}
+                          {getItemConfirmationNumber(item) ? <p className="mt-2 text-sm text-[#A1A1A6]">Confirmation #{getItemConfirmationNumber(item)}</p> : null}
+                          {item.notes ? <p className="mt-2 text-sm leading-6 text-[#A1A1A6]">{item.notes}</p> : null}
+                        </div>
+                        <div className="flex shrink-0 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => onEditItem(day.id, item)}
+                            className="ios-icon-button"
+                            aria-label="Edit"
+                            title="Edit"
+                          >
+                            <LucideIcon name="pencil" size={20} />
+                          </button>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+                {items.length === 0 ? <p className="py-4 text-[15px] text-[#A1A1A6]">No reservations yet.</p> : null}
               </div>
-            </div>
-            <div className="divide-y divide-[#2C2C2E]/70">
-              {items.map((item) => (
-                <article key={item.id} className="py-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-[12px] font-black uppercase tracking-[0.16em] text-[#A1A1A6]">{formatTimeRange(item)}</p>
-                      <h3 className="mt-2 text-xl font-black leading-tight text-white">{item.title}</h3>
-                      <p className="mt-1 text-sm font-semibold text-[#A1A1A6]">{item.location}</p>
-                      {getItemConfirmationNumber(item) ? <p className="mt-2 text-sm text-[#A1A1A6]">Confirmation #{getItemConfirmationNumber(item)}</p> : null}
-                      {item.notes ? <p className="mt-2 text-sm leading-6 text-[#A1A1A6]">{item.notes}</p> : null}
-                    </div>
-                    <div className="flex shrink-0 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => onEditItem(day.id, item)}
-                        className="ios-icon-button"
-                        aria-label="Edit"
-                        title="Edit"
-                      >
-                        <LucideIcon name="pencil" size={20} />
-                      </button>
-                    </div>
-                  </div>
-                </article>
-              ))}
-              {items.length === 0 ? <p className="py-4 text-[15px] text-[#A1A1A6]">No reservations yet.</p> : null}
-            </div>
-          </section>
-        ))}
+            </section>
+          );
+        })}
         {reservationGroups.length === 0 ? <p className="text-[15px] text-[#A1A1A6]">No reservations yet.</p> : null}
       </div>
     </main>
@@ -2973,13 +3007,15 @@ export default function App() {
       return;
     }
 
-    const existingDay = tripDays.find((day) => day.date === date);
     const existingCard = tripStorage.reservationDayCards[date];
+    const title = reservationDayCardAdd.title.trim();
+    const notes = reservationDayCardAdd.notes.trim();
+
     tripStorage.saveReservationDayCard({
       id: existingCard?.id ?? `reservation-day-card-${date}`,
       date,
-      title: reservationDayCardAdd.title.trim() || existingCard?.title || existingDay?.label,
-      notes: reservationDayCardAdd.notes.trim() || existingCard?.notes,
+      title: title || existingCard?.title || undefined,
+      notes: notes || existingCard?.notes,
     });
     setReservationDayCardAdd(null);
   }

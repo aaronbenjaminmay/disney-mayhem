@@ -31,6 +31,16 @@ function getConfirmationNumber(item: TripItem): string | undefined {
   return 'confirmationNumber' in item ? item.confirmationNumber : undefined;
 }
 
+function normalizeDisplayText(value?: string): string {
+  return (value ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function shouldShowSecondaryText(primary?: string, secondary?: string): boolean {
+  const normalizedPrimary = normalizeDisplayText(primary);
+  const normalizedSecondary = normalizeDisplayText(secondary);
+  return Boolean(normalizedSecondary && normalizedPrimary !== normalizedSecondary);
+}
+
 export function ItemCard({ item, statuses, onCycleStatus, onEdit, compact = false }: ItemCardProps) {
   const itemStatus = statuses[getItemStatusKey(item)];
   const nextActivity = findNextActivity(item, statuses);
@@ -43,7 +53,7 @@ export function ItemCard({ item, statuses, onCycleStatus, onEdit, compact = fals
           <div>
             <p className="text-[12px] font-black uppercase tracking-[0.16em] text-[#0A84FF]">{formatTimeRange(item)}</p>
             <h3 className="mt-2 text-[20px] font-black leading-tight text-white">{item.title}</h3>
-            <p className="mt-2 text-[15px] font-semibold text-[#A1A1A6]">{item.area}</p>
+            {shouldShowSecondaryText(item.title, item.area) ? <p className="mt-2 text-[15px] font-semibold text-[#A1A1A6]">{item.area}</p> : null}
           </div>
           <div className="flex gap-2">
             <EditButton item={item} onEdit={onEdit} />
@@ -68,7 +78,7 @@ export function ItemCard({ item, statuses, onCycleStatus, onEdit, compact = fals
                 <li key={activity.id} className="flex items-center justify-between gap-3 rounded-2xl bg-[#111111] p-4">
                   <div>
                     <p className="text-[16px] font-bold text-white">{activity.title}</p>
-                    <p className="mt-1 text-[14px] text-[#A1A1A6]">{activity.location}</p>
+                    {shouldShowSecondaryText(activity.title, activity.location) ? <p className="mt-1 text-[14px] text-[#A1A1A6]">{activity.location}</p> : null}
                   </div>
                   <StatusButton id={key} status={status} onCycle={onCycleStatus} />
                 </li>
@@ -86,7 +96,7 @@ export function ItemCard({ item, statuses, onCycleStatus, onEdit, compact = fals
         <div>
           <p className="text-[12px] font-black uppercase tracking-[0.16em] text-[#0A84FF]">{formatTimeRange(item)}</p>
           <h3 className="mt-2 text-[20px] font-black leading-tight text-white">{item.title}</h3>
-          <p className="mt-2 text-[15px] font-semibold text-[#A1A1A6]">{item.location}</p>
+          {shouldShowSecondaryText(item.title, item.location) ? <p className="mt-2 text-[15px] font-semibold text-[#A1A1A6]">{item.location}</p> : null}
           {item.type === 'scheduled' && (item.from || item.to) ? (
             <p className="mt-1 text-[14px] text-[#A1A1A6]">
               {[item.from, item.to].filter(Boolean).join(' -> ')}
