@@ -10,8 +10,9 @@ import {
   disablePushSubscription,
   getExistingPushSubscription,
   getNotificationPermission,
+  getStoredPushSubscriptionEnabled,
   hasVapidPublicKey,
-  isPushSubscriptionSupported,
+  hasPushSubscriptionStorage,
   subscribeToPushNotifications,
 } from './lib/pushSubscriptions';
 import type { Activity, EditableActivityFields, EditableItemFields, ItemPlacement, ItemStatus, LandBlock, LandGroupOrder, ParkName, ReservationDayCard, TripDay, TripItem } from './types';
@@ -764,13 +765,20 @@ type NotificationControlStatus = 'checking' | 'unsupported' | 'unconfigured' | '
 
 type NotificationCapabilityDiagnostics = {
   standalonePwa: boolean;
+  iOS: boolean;
+  requiresStandalonePwa: boolean;
   notificationApi: boolean;
   serviceWorkerApi: boolean;
   pushManagerApi: boolean;
   vapidPublicKeyPresent: boolean;
+  subscriptionStoragePresent: boolean;
   serviceWorkerReady: boolean;
   notificationPermission: NotificationPermission | 'unsupported';
 };
+
+function isIOSDevice(): boolean {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
 
 function isStandalonePwa(): boolean {
   const navigatorWithStandalone = navigator as Navigator & { standalone?: boolean };
@@ -778,12 +786,16 @@ function isStandalonePwa(): boolean {
 }
 
 function getNotificationCapabilities(serviceWorkerReady: boolean): NotificationCapabilityDiagnostics {
+  const iOS = isIOSDevice();
   return {
     standalonePwa: isStandalonePwa(),
+    iOS,
+    requiresStandalonePwa: iOS,
     notificationApi: 'Notification' in window,
     serviceWorkerApi: 'serviceWorker' in navigator,
     pushManagerApi: 'PushManager' in window,
     vapidPublicKeyPresent: hasVapidPublicKey(),
+    subscriptionStoragePresent: hasPushSubscriptionStorage(),
     serviceWorkerReady,
     notificationPermission: getNotificationPermission(),
   };
@@ -796,6 +808,7 @@ function canRequestNotifications(capabilities: NotificationCapabilityDiagnostics
     capabilities.serviceWorkerApi &&
     capabilities.pushManagerApi &&
     capabilities.vapidPublicKeyPresent &&
+    (!capabilities.requiresStandalonePwa || capabilities.standalonePwa) &&
     capabilities.notificationPermission !== 'denied'
   );
 }
@@ -813,11 +826,19 @@ function NotificationSettingsControl() {
     async function checkSubscription() {
       const initialCapabilities = getNotificationCapabilities(false);
       setCapabilities(initialCapabilities);
+      console.log('Disney Mayhem notification capability object', initialCapabilities);
 
-      if (!isPushSubscriptionSupported() || !initialCapabilities.standalonePwa) {
+      if (!initialCapabilities.notificationApi || !initialCapabilities.serviceWorkerApi || !initialCapabilities.pushManagerApi) {
         if (!isMounted) return;
         setStatus('unsupported');
-        setNote('');
+        setNote('Push notifications are not supported here.');
+        return;
+      }
+
+      if (initialCapabilities.requiresStandalonePwa && !initialCapabilities.standalonePwa) {
+        if (!isMounted) return;
+        setStatus('unsupported');
+        setNote('Push notifications are not supported here.');
         return;
       }
 
@@ -831,7 +852,7 @@ function NotificationSettingsControl() {
       if (initialCapabilities.notificationPermission === 'denied') {
         if (!isMounted) return;
         setStatus('denied');
-        setNote('Notifications are blocked for this browser.');
+        setNote('Notifications are blocked in browser settings.');
         return;
       }
 
@@ -844,6 +865,10 @@ function NotificationSettingsControl() {
         const readyCapabilities = getNotificationCapabilities(Boolean(registration));
         if (!isMounted) return;
         setCapabilities(readyCapabilities);
+        console.log('Disney Mayhem notification service worker ready result', {
+          ready: Boolean(registration),
+          scope: registration ? registration.scope : undefined,
+        });
 
         if (!registration) {
           setStatus('service-worker-starting');
@@ -855,9 +880,12 @@ function NotificationSettingsControl() {
         }
 
         const existingSubscription = await registration.pushManager.getSubscription();
+        console.log('Disney Mayhem push existing subscription result', existingSubscription);
+        const storedEnabled = existingSubscription ? await getStoredPushSubscriptionEnabled(existingSubscription.endpoint) : undefined;
+        console.log('Disney Mayhem push Supabase enabled result', { endpoint: existingSubscription?.endpoint, enabled: storedEnabled });
         if (!isMounted) return;
         setSubscription(existingSubscription);
-        setStatus(existingSubscription ? 'enabled' : 'disabled');
+        setStatus(existingSubscription && storedEnabled !== false ? 'enabled' : 'disabled');
         setNote('');
       } catch (error) {
         console.warn('Disney Mayhem push subscription check failed', error);
@@ -877,10 +905,18 @@ function NotificationSettingsControl() {
   async function enableNotifications() {
     const currentCapabilities = getNotificationCapabilities(capabilities.serviceWorkerReady);
     setCapabilities(currentCapabilities);
+    console.log('Disney Mayhem notification capability object', currentCapabilities);
+    console.log('Disney Mayhem notification toggle attempted', { enabled: true });
 
-    if (!isPushSubscriptionSupported() || !currentCapabilities.standalonePwa) {
+    if (!currentCapabilities.notificationApi || !currentCapabilities.serviceWorkerApi || !currentCapabilities.pushManagerApi) {
       setStatus('unsupported');
-      setNote('');
+      setNote('Push notifications are not supported here.');
+      return;
+    }
+
+    if (currentCapabilities.requiresStandalonePwa && !currentCapabilities.standalonePwa) {
+      setStatus('unsupported');
+      setNote('Push notifications are not supported here.');
       return;
     }
 
@@ -895,24 +931,28 @@ function NotificationSettingsControl() {
 
     try {
       const permission = await Notification.requestPermission();
+      console.log('Disney Mayhem notification permission result', permission);
       if (permission !== 'granted') {
+        setCapabilities(getNotificationCapabilities(capabilities.serviceWorkerReady));
         setStatus(permission === 'denied' ? 'denied' : 'disabled');
-        setNote(permission === 'denied' ? 'Notifications are blocked for this browser.' : '');
+        setNote(permission === 'denied' ? 'Notifications are blocked in browser settings.' : '');
         return;
       }
 
       const nextSubscription = await subscribeToPushNotifications();
+      console.log('Disney Mayhem push subscription result', nextSubscription);
       setSubscription(nextSubscription);
       setStatus('enabled');
       setNote('');
     } catch (error) {
       console.warn('Disney Mayhem push subscription save failed', error);
       setStatus('error');
-      setNote('Notification setup could not be saved.');
+      setNote('Notifications could not be enabled.');
     }
   }
 
   async function disableNotifications() {
+    console.log('Disney Mayhem notification toggle attempted', { enabled: false });
     setStatus('working');
     setNote('');
 
@@ -921,6 +961,7 @@ function NotificationSettingsControl() {
       if (activeSubscription) await disablePushSubscription(activeSubscription);
       setSubscription(null);
       setStatus('disabled');
+      setNote('');
     } catch (error) {
       console.warn('Disney Mayhem push subscription disable failed', error);
       setStatus('error');
@@ -931,7 +972,8 @@ function NotificationSettingsControl() {
   const isBusy = status === 'checking' || status === 'working';
   const isEnabled = status === 'enabled';
   const canEnable = canRequestNotifications(capabilities) && !isBusy;
-  const isDisabled = isBusy || (!isEnabled && !canEnable);
+  const serviceWorkerCheckFailed = status === 'error' && note === 'Notification setup could not be checked.';
+  const isDisabled = isBusy || serviceWorkerCheckFailed || (!isEnabled && !canEnable);
 
   return (
     <section aria-labelledby="notification-settings-title" className="glass-surface rounded-[1.2rem] px-4 py-3">
@@ -982,6 +1024,7 @@ function NotificationSettingsControl() {
           </span>
         </label>
       </div>
+      {note ? <p className="mt-2 text-[12px] font-semibold leading-5 text-[#FF9F0A]">{note}</p> : null}
     </section>
   );
 }

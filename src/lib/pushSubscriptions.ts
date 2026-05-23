@@ -10,6 +10,10 @@ export function hasVapidPublicKey(): boolean {
   return Boolean(vapidPublicKey);
 }
 
+export function hasPushSubscriptionStorage(): boolean {
+  return Boolean(supabase && tripId);
+}
+
 export function isPushSubscriptionSupported(): boolean {
   return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
 }
@@ -72,6 +76,25 @@ export async function savePushSubscription(subscription: PushSubscription) {
   });
 
   if (error) throw error;
+  console.log('Disney Mayhem push Supabase save/update result', { endpoint: subscription.endpoint, enabled: true });
+}
+
+export async function getStoredPushSubscriptionEnabled(endpoint: string): Promise<boolean | undefined> {
+  if (!supabase || !tripId) return undefined;
+
+  const { data, error } = await supabase
+    .from('push_subscriptions')
+    .select('enabled')
+    .eq('trip_id', tripId)
+    .eq('endpoint', endpoint)
+    .maybeSingle();
+
+  if (error) {
+    console.warn('Disney Mayhem push Supabase enabled check failed', error);
+    return undefined;
+  }
+
+  return typeof data?.enabled === 'boolean' ? data.enabled : undefined;
 }
 
 export async function subscribeToPushNotifications(): Promise<PushSubscription> {
@@ -100,6 +123,7 @@ export async function disablePushSubscription(subscription: PushSubscription) {
       .eq('endpoint', subscription.endpoint);
 
     if (error) throw error;
+    console.log('Disney Mayhem push Supabase save/update result', { endpoint: subscription.endpoint, enabled: false });
   }
 
   await subscription.unsubscribe();
