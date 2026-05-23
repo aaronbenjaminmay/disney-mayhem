@@ -49,6 +49,17 @@ type TimelineActivityBlock = TripItem & {
 const warnedUnknownStatusIds = new Set<string>();
 const warnedLandGroupMismatchIds = new Set<string>();
 
+type FireworkParticle = {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  size: number;
+  color: string;
+  life: number;
+  maxLife: number;
+};
+
 function normalizeDisplayText(value?: string): string {
   return (value ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
@@ -762,6 +773,134 @@ function TodayIntelCard({
   );
 }
 
+function FireworksOverlay({ onDone }: { onDone: () => void }) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return undefined;
+    const overlayCanvas = canvas;
+
+    const context = overlayCanvas.getContext('2d');
+    if (!context) return undefined;
+    const drawingContext = context;
+
+    let animationFrame = 0;
+    let startTime = 0;
+    let lastTime = 0;
+    let isDone = false;
+    const particles: FireworkParticle[] = [];
+    const colors = ['#FFD166', '#FFFFFF', '#7CC7FF', '#FF8CC6'];
+    const bursts = [
+      { time: 300, x: 0.28, y: 0.42 },
+      { time: 620, x: 0.68, y: 0.35 },
+      { time: 980, x: 0.48, y: 0.5 },
+    ];
+    const triggeredBursts = new Set<number>();
+
+    function resizeCanvas() {
+      const pixelRatio = window.devicePixelRatio || 1;
+      overlayCanvas.width = Math.floor(window.innerWidth * pixelRatio);
+      overlayCanvas.height = Math.floor(window.innerHeight * pixelRatio);
+      overlayCanvas.style.width = `${window.innerWidth}px`;
+      overlayCanvas.style.height = `${window.innerHeight}px`;
+      drawingContext.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+    }
+
+    function addBurst(centerX: number, centerY: number) {
+      const particleCount = 42;
+
+      for (let index = 0; index < particleCount; index += 1) {
+        const angle = (Math.PI * 2 * index) / particleCount;
+        const speed = 1.4 + Math.random() * 3.6;
+
+        particles.push({
+          x: centerX,
+          y: centerY,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed - 0.5,
+          size: 1.5 + Math.random() * 2.2,
+          color: colors[index % colors.length],
+          life: 0,
+          maxLife: 900 + Math.random() * 450,
+        });
+      }
+    }
+
+    function drawFrame(timestamp: number) {
+      if (!startTime) {
+        startTime = timestamp;
+        lastTime = timestamp;
+      }
+
+      const elapsed = timestamp - startTime;
+      const delta = Math.min(timestamp - lastTime, 34);
+      lastTime = timestamp;
+
+      drawingContext.clearRect(0, 0, window.innerWidth, window.innerHeight);
+      drawingContext.save();
+      drawingContext.globalCompositeOperation = 'lighter';
+
+      bursts.forEach((burst, index) => {
+        if (elapsed >= burst.time && !triggeredBursts.has(index)) {
+          triggeredBursts.add(index);
+          addBurst(window.innerWidth * burst.x, window.innerHeight * burst.y);
+        }
+      });
+
+      for (let index = particles.length - 1; index >= 0; index -= 1) {
+        const particle = particles[index];
+        particle.life += delta;
+        particle.x += particle.vx * (delta / 16);
+        particle.y += particle.vy * (delta / 16);
+        particle.vy += 0.035 * (delta / 16);
+
+        const progress = particle.life / particle.maxLife;
+        if (progress >= 1) {
+          particles.splice(index, 1);
+          continue;
+        }
+
+        const alpha = Math.max(0, 1 - progress);
+        drawingContext.globalAlpha = alpha;
+        drawingContext.shadowBlur = 14;
+        drawingContext.shadowColor = particle.color;
+        drawingContext.fillStyle = particle.color;
+        drawingContext.beginPath();
+        drawingContext.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+        drawingContext.fill();
+      }
+
+      drawingContext.restore();
+
+      if (elapsed < 2_700 || particles.length > 0) {
+        animationFrame = window.requestAnimationFrame(drawFrame);
+        return;
+      }
+
+      if (!isDone) {
+        isDone = true;
+        onDone();
+      }
+    }
+
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+    animationFrame = window.requestAnimationFrame(drawFrame);
+
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+      window.removeEventListener('resize', resizeCanvas);
+    };
+  }, [onDone]);
+
+  return (
+    <div className="pointer-events-none fixed inset-0 z-[80] animate-[screen-fade_160ms_ease-out_both]" aria-hidden="true">
+      <canvas ref={canvasRef} className="h-full w-full" />
+    </div>
+  );
+}
+
 type NotificationControlStatus = 'checking' | 'unsupported' | 'unconfigured' | 'denied' | 'disabled' | 'enabled' | 'working' | 'error' | 'service-worker-starting';
 
 type NotificationCapabilityDiagnostics = {
@@ -1067,6 +1206,7 @@ function TodayScreen({
   days,
   onOpenDay,
   onOpenReservations,
+  onWordmarkTap,
 }: ReturnType<typeof getActiveScheduleState> & {
   statuses: Record<string, ItemStatus>;
   onCycleStatus: (id: string) => void;
@@ -1078,6 +1218,7 @@ function TodayScreen({
   days: TripDay[];
   onOpenDay: (dayId: string) => void;
   onOpenReservations: () => void;
+  onWordmarkTap: () => void;
 }) {
   if (phase === 'before') {
     const countdownUnits = [
@@ -1091,11 +1232,18 @@ function TodayScreen({
       <main className="screen-fade px-4 pb-8 pt-8 sm:pt-12">
         <section aria-labelledby="countdown-heading" className="section-rise text-center">
           <h1 id="countdown-heading" className="sr-only">Disney Mayhem</h1>
-          <img
-            src={`${import.meta.env.BASE_URL}DisneyMayhem-WM.svg`}
-            alt="Disney Mayhem"
-            className="mx-auto h-auto w-[min(78vw,280px)] sm:w-[320px]"
-          />
+          <button
+            type="button"
+            onClick={onWordmarkTap}
+            className="mx-auto block rounded-2xl focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-4 focus-visible:outline-[#0A84FF]"
+            aria-label="Disney Mayhem"
+          >
+            <img
+              src={`${import.meta.env.BASE_URL}DisneyMayhem-WM.svg`}
+              alt="Disney Mayhem"
+              className="h-auto w-[min(78vw,280px)] sm:w-[320px]"
+            />
+          </button>
           <p className="mt-5 text-[13px] font-black uppercase tracking-[0.18em] text-white">Disney Mayhem begins in...</p>
           <div className="glass-surface mx-auto mt-7 max-w-3xl rounded-[1.75rem] px-5 py-7 sm:px-8 sm:py-9">
             <div className="flex flex-wrap justify-center gap-x-6 gap-y-7" aria-live="polite" aria-label="Live countdown to departure">
@@ -3091,6 +3239,9 @@ export default function App() {
   const [landEditor, setLandEditor] = useState<LandEditorState | null>(null);
   const [landDelete, setLandDelete] = useState<LandDeleteState | null>(null);
   const [itemDelete, setItemDelete] = useState<ItemDeleteState | null>(null);
+  const [fireworksRun, setFireworksRun] = useState(0);
+  const wordmarkTapTimes = useRef<number[]>([]);
+  const wordmarkTapReset = useRef<number | undefined>(undefined);
   const tripStorage = useTripStorage();
 
   useEffect(() => {
@@ -3112,6 +3263,12 @@ export default function App() {
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
   }, [activeTab, selectedDayId]);
+
+  useEffect(() => {
+    return () => {
+      if (wordmarkTapReset.current) window.clearTimeout(wordmarkTapReset.current);
+    };
+  }, []);
 
   const tripDays = useMemo(
     () =>
@@ -3162,6 +3319,23 @@ export default function App() {
     setSelectedDayId(null);
     setActiveTab(tab);
     updateRouteHash(tab);
+  }
+
+  function handleWordmarkTap() {
+    const timestamp = Date.now();
+    wordmarkTapTimes.current = [...wordmarkTapTimes.current, timestamp].filter((tapTime) => timestamp - tapTime <= 1_500);
+
+    if (wordmarkTapReset.current) window.clearTimeout(wordmarkTapReset.current);
+
+    if (wordmarkTapTimes.current.length >= 3) {
+      wordmarkTapTimes.current = [];
+      setFireworksRun((run) => run + 1);
+      return;
+    }
+
+    wordmarkTapReset.current = window.setTimeout(() => {
+      wordmarkTapTimes.current = [];
+    }, 1_500);
   }
 
   function openEditItem(dayId: string, item: TripItem) {
@@ -3665,6 +3839,7 @@ export default function App() {
             days={tripDays}
             onOpenDay={openDashboardDay}
             onOpenReservations={() => openDashboardTab('reservations')}
+            onWordmarkTap={handleWordmarkTap}
           />
         ) : null}
         {activeTab === 'days' ? (
@@ -3692,6 +3867,7 @@ export default function App() {
         ) : null}
       </div>
       {phase === 'before' ? null : <Tabs activeTab={activeTab} onChange={openTab} />}
+      {fireworksRun > 0 ? <FireworksOverlay key={fireworksRun} onDone={() => setFireworksRun(0)} /> : null}
       {editor ? (
         <ItemEditorSheet
           editor={editor}
