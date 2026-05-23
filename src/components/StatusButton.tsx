@@ -10,7 +10,7 @@ type StatusButtonProps = {
 
 function MouseHeadIcon() {
   return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5" focusable="false">
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="h-[1.4rem] w-[1.4rem]" focusable="false">
       <circle cx="12" cy="13" r="6.5" fill="currentColor" />
       <circle cx="6.6" cy="7.2" r="3.8" fill="currentColor" />
       <circle cx="17.4" cy="7.2" r="3.8" fill="currentColor" />
@@ -41,7 +41,7 @@ export function StatusButton({ id, status = 'todo', onCycle }: StatusButtonProps
       onClick={() => onCycle(id)}
       className={`inline-flex min-h-11 min-w-11 items-center justify-center rounded-full border transition focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF] ${
         isDone
-          ? 'border-[#30D158] bg-[#30D158] text-black'
+          ? 'border-[#0A84FF] bg-[#0A84FF] text-white hover:border-[#0A84FF] hover:bg-[#0A84FF]'
           : 'border-white/10 bg-[#1C1C1E]/80 text-[#A1A1A6] hover:border-white/15 hover:bg-[#2C2C2E]'
       } ${shouldBounce ? 'status-complete-bounce' : ''}`}
       aria-label={isDone ? 'Mark incomplete' : 'Mark complete'}
