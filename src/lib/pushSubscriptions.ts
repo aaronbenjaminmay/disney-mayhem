@@ -6,6 +6,10 @@ export function isPushSubscriptionConfigured(): boolean {
   return Boolean(supabase && tripId && vapidPublicKey);
 }
 
+export function hasVapidPublicKey(): boolean {
+  return Boolean(vapidPublicKey);
+}
+
 export function isPushSubscriptionSupported(): boolean {
   return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
 }

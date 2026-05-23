@@ -10,7 +10,7 @@ import {
   disablePushSubscription,
   getExistingPushSubscription,
   getNotificationPermission,
-  isPushSubscriptionConfigured,
+  hasVapidPublicKey,
   isPushSubscriptionSupported,
   subscribeToPushNotifications,
 } from './lib/pushSubscriptions';
@@ -760,33 +760,75 @@ function TodayIntelCard({
   );
 }
 
-type NotificationControlStatus = 'checking' | 'unsupported' | 'unconfigured' | 'denied' | 'disabled' | 'enabled' | 'working' | 'error';
+type NotificationControlStatus = 'checking' | 'unsupported' | 'unconfigured' | 'denied' | 'disabled' | 'enabled' | 'working' | 'error' | 'service-worker-starting';
+
+type NotificationCapabilityDiagnostics = {
+  standalonePwa: boolean;
+  notificationApi: boolean;
+  serviceWorkerApi: boolean;
+  pushManagerApi: boolean;
+  vapidPublicKeyPresent: boolean;
+  serviceWorkerReady: boolean;
+  notificationPermission: NotificationPermission | 'unsupported';
+};
+
+function isStandalonePwa(): boolean {
+  const navigatorWithStandalone = navigator as Navigator & { standalone?: boolean };
+  return window.matchMedia('(display-mode: standalone)').matches || navigatorWithStandalone.standalone === true;
+}
+
+function getNotificationCapabilities(serviceWorkerReady: boolean): NotificationCapabilityDiagnostics {
+  return {
+    standalonePwa: isStandalonePwa(),
+    notificationApi: 'Notification' in window,
+    serviceWorkerApi: 'serviceWorker' in navigator,
+    pushManagerApi: 'PushManager' in window,
+    vapidPublicKeyPresent: hasVapidPublicKey(),
+    serviceWorkerReady,
+    notificationPermission: getNotificationPermission(),
+  };
+}
+
+function canRequestNotifications(capabilities: NotificationCapabilityDiagnostics): boolean {
+  return (
+    capabilities.standalonePwa &&
+    capabilities.notificationApi &&
+    capabilities.serviceWorkerApi &&
+    capabilities.pushManagerApi &&
+    capabilities.vapidPublicKeyPresent &&
+    capabilities.notificationPermission !== 'denied'
+  );
+}
 
 function NotificationSettingsControl() {
   const [status, setStatus] = useState<NotificationControlStatus>('checking');
   const [subscription, setSubscription] = useState<PushSubscription | null>(null);
   const [note, setNote] = useState('');
+  const [capabilities, setCapabilities] = useState<NotificationCapabilityDiagnostics>(() => getNotificationCapabilities(false));
 
   useEffect(() => {
     let isMounted = true;
+    let retryTimeout: number | undefined;
 
     async function checkSubscription() {
-      if (!isPushSubscriptionSupported()) {
+      const initialCapabilities = getNotificationCapabilities(false);
+      setCapabilities(initialCapabilities);
+
+      if (!isPushSubscriptionSupported() || !initialCapabilities.standalonePwa) {
         if (!isMounted) return;
         setStatus('unsupported');
         setNote('Notifications are only available after adding Disney Mayhem to your Home Screen.');
         return;
       }
 
-      if (!isPushSubscriptionConfigured()) {
+      if (!initialCapabilities.vapidPublicKeyPresent) {
         if (!isMounted) return;
         setStatus('unconfigured');
-        setNote('Notifications are not configured yet.');
+        setNote('VAPID public key is missing from this build.');
         return;
       }
 
-      const permission = getNotificationPermission();
-      if (permission === 'denied') {
+      if (initialCapabilities.notificationPermission === 'denied') {
         if (!isMounted) return;
         setStatus('denied');
         setNote('Notifications are blocked for this browser.');
@@ -794,7 +836,25 @@ function NotificationSettingsControl() {
       }
 
       try {
-        const existingSubscription = await getExistingPushSubscription();
+        const readyPromise = navigator.serviceWorker.ready;
+        const timeoutPromise = new Promise<null>((resolve) => {
+          retryTimeout = window.setTimeout(() => resolve(null), 2_000);
+        });
+        const registration = await Promise.race([readyPromise, timeoutPromise]);
+        const readyCapabilities = getNotificationCapabilities(Boolean(registration));
+        if (!isMounted) return;
+        setCapabilities(readyCapabilities);
+
+        if (!registration) {
+          setStatus('service-worker-starting');
+          setNote('Service worker is still starting. Close and reopen the app.');
+          retryTimeout = window.setTimeout(() => {
+            void checkSubscription();
+          }, 2_500);
+          return;
+        }
+
+        const existingSubscription = await registration.pushManager.getSubscription();
         if (!isMounted) return;
         setSubscription(existingSubscription);
         setStatus(existingSubscription ? 'enabled' : 'disabled');
@@ -810,19 +870,23 @@ function NotificationSettingsControl() {
     void checkSubscription();
     return () => {
       isMounted = false;
+      if (retryTimeout) window.clearTimeout(retryTimeout);
     };
   }, []);
 
   async function enableNotifications() {
-    if (!isPushSubscriptionSupported()) {
+    const currentCapabilities = getNotificationCapabilities(capabilities.serviceWorkerReady);
+    setCapabilities(currentCapabilities);
+
+    if (!isPushSubscriptionSupported() || !currentCapabilities.standalonePwa) {
       setStatus('unsupported');
       setNote('Notifications are only available after adding Disney Mayhem to your Home Screen.');
       return;
     }
 
-    if (!isPushSubscriptionConfigured()) {
+    if (!currentCapabilities.vapidPublicKeyPresent) {
       setStatus('unconfigured');
-      setNote('Notifications are not configured yet.');
+      setNote('VAPID public key is missing from this build.');
       return;
     }
 
@@ -866,7 +930,7 @@ function NotificationSettingsControl() {
 
   const isBusy = status === 'checking' || status === 'working';
   const isEnabled = status === 'enabled';
-  const canEnable = status === 'disabled' || status === 'error';
+  const canEnable = canRequestNotifications(capabilities) && !isBusy;
   const buttonLabel = isEnabled ? 'Disable notifications' : isBusy ? 'Saving...' : 'Enable notifications';
   const helperText =
     note ||
