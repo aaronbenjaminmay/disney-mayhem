@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ItemCard } from './components/ItemCard';
 import { LucideIcon, type LucideIconName } from './components/LucideIcon';
 import { ScreenHeader } from './components/ScreenHeader';
@@ -2508,6 +2509,7 @@ function LandEditorSheet({
   onMoveLater: () => void;
 }) {
   const [lightningLanePicker, setLightningLanePicker] = useState<LightningLanePickerState | null>(null);
+  const lightningLaneDialogRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -2522,6 +2524,11 @@ function LandEditorSheet({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [lightningLanePicker, onCancel]);
+
+  useEffect(() => {
+    if (!lightningLanePicker) return;
+    window.requestAnimationFrame(() => lightningLaneDialogRef.current?.focus());
+  }, [lightningLanePicker]);
 
   function updateActivity(id: string, draft: EditableActivityFields) {
     onChange({
@@ -2621,8 +2628,75 @@ function LandEditorSheet({
   const visibleActivities = editor.activities.filter((activity) => !activity.removed);
   const inputClass =
     'mt-2 min-h-12 w-full rounded-2xl border border-[#2C2C2E] bg-[#111111] px-4 text-base font-bold text-white outline-none focus:border-[#0A84FF] focus:ring-4 focus:ring-[#0A84FF]/30';
+  const lightningLaneModal =
+    lightningLanePicker && typeof document !== 'undefined'
+      ? createPortal(
+          <div className="fixed inset-0 z-[80] flex items-end bg-black/70 px-3 py-4 sm:items-center sm:justify-center" role="presentation">
+            <section
+              ref={lightningLaneDialogRef}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="ll-picker-title"
+              tabIndex={-1}
+              className="glass-surface screen-fade max-h-[88vh] w-full max-w-xl overflow-y-auto rounded-[2rem] p-5 outline-none focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]"
+            >
+              <h3 id="ll-picker-title" className="text-2xl font-black text-white">
+                Lightning Lane Window
+              </h3>
+              <label className="mt-5 block">
+                <span className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Lightning Lane Start</span>
+                <input
+                  type="time"
+                  value={lightningLanePicker.startTime}
+                  onChange={(event) => setLightningLanePicker({ ...lightningLanePicker, startTime: event.target.value || '12:00' })}
+                  className="mt-2 min-h-12 w-full rounded-2xl border border-[#2C2C2E] bg-[#1C1C1E] px-4 text-lg font-bold text-white outline-none focus:border-[#0A84FF] focus:ring-4 focus:ring-[#0A84FF]/30"
+                />
+              </label>
+
+              <p className="mt-5 text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Duration</p>
+              <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {lightningLaneDurationOptions.map((duration) => {
+                  const selected = lightningLanePicker.duration === duration;
+                  return (
+                    <button
+                      key={duration}
+                      type="button"
+                      onClick={() => setLightningLanePicker({ ...lightningLanePicker, duration })}
+                      className={`min-h-11 rounded-full border px-3 py-2 text-sm font-black focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF] ${
+                        selected ? 'border-[#0A84FF] bg-[#0A84FF]/15 text-white ring-2 ring-[#0A84FF]' : 'border-[#2C2C2E] bg-[#1C1C1E] text-[#A1A1A6]'
+                      }`}
+                      aria-pressed={selected}
+                    >
+                      {duration} min
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="glass-surface mt-6 rounded-[1.25rem] p-4">
+                <p className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Preview</p>
+                <p className="mt-2 text-xl font-black text-white">LL window: {formatOptionalTimeRange(lightningLanePicker.startTime, addMinutesToTime(lightningLanePicker.startTime, lightningLanePicker.duration))}</p>
+              </div>
+
+              <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-end">
+                <button type="button" onClick={() => setLightningLanePicker(null)} className="min-h-12 rounded-full border border-[#3A3A3C] bg-[#1C1C1E] px-5 py-2 font-black text-white focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]">
+                  Cancel
+                </button>
+                <button type="button" onClick={clearLightningLaneWindow} className="min-h-12 rounded-full border border-[#FF453A] bg-[#1C1C1E] px-5 py-2 font-black text-[#FF453A] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#FF453A]">
+                  Clear
+                </button>
+                <button type="button" onClick={saveLightningLaneWindow} className="min-h-12 rounded-full bg-[#0A84FF] px-5 py-2 font-black text-black focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]">
+                  Save
+                </button>
+              </div>
+            </section>
+          </div>,
+          document.body,
+        )
+      : null;
 
   return (
+    <>
     <div className="fixed inset-0 z-40 flex items-end bg-black/70 px-3 py-4 sm:items-center sm:justify-center" role="presentation">
       <section
         role="dialog"
@@ -2742,67 +2816,6 @@ function LandEditorSheet({
           ))}
         </div>
 
-        {lightningLanePicker ? (
-          <div className="fixed inset-0 z-50 flex items-end bg-black/70 px-3 py-4 sm:items-center sm:justify-center" role="presentation">
-            <section
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="ll-picker-title"
-              className="glass-surface screen-fade max-h-[88vh] w-full max-w-xl overflow-y-auto rounded-[2rem] p-5"
-            >
-              <h3 id="ll-picker-title" className="text-2xl font-black text-white">
-                Lightning Lane Window
-              </h3>
-              <label className="mt-5 block">
-                <span className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Lightning Lane Start</span>
-                <input
-                  type="time"
-                  value={lightningLanePicker.startTime}
-                  onChange={(event) => setLightningLanePicker({ ...lightningLanePicker, startTime: event.target.value || '12:00' })}
-                  className="mt-2 min-h-12 w-full rounded-2xl border border-[#2C2C2E] bg-[#1C1C1E] px-4 text-lg font-bold text-white outline-none focus:border-[#0A84FF] focus:ring-4 focus:ring-[#0A84FF]/30"
-                />
-              </label>
-
-              <p className="mt-5 text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Duration</p>
-              <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                {lightningLaneDurationOptions.map((duration) => {
-                  const selected = lightningLanePicker.duration === duration;
-                  return (
-                    <button
-                      key={duration}
-                      type="button"
-                      onClick={() => setLightningLanePicker({ ...lightningLanePicker, duration })}
-                      className={`min-h-11 rounded-full border px-3 py-2 text-sm font-black focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF] ${
-                        selected ? 'border-[#0A84FF] bg-[#0A84FF]/15 text-white ring-2 ring-[#0A84FF]' : 'border-[#2C2C2E] bg-[#1C1C1E] text-[#A1A1A6]'
-                      }`}
-                      aria-pressed={selected}
-                    >
-                      {duration} min
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div className="glass-surface mt-6 rounded-[1.25rem] p-4">
-                <p className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Preview</p>
-                <p className="mt-2 text-xl font-black text-white">LL window: {formatOptionalTimeRange(lightningLanePicker.startTime, addMinutesToTime(lightningLanePicker.startTime, lightningLanePicker.duration))}</p>
-              </div>
-
-              <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-end">
-                <button type="button" onClick={() => setLightningLanePicker(null)} className="min-h-12 rounded-full border border-[#3A3A3C] bg-[#1C1C1E] px-5 py-2 font-black text-white focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]">
-                  Cancel
-                </button>
-                <button type="button" onClick={clearLightningLaneWindow} className="min-h-12 rounded-full border border-[#FF453A] bg-[#1C1C1E] px-5 py-2 font-black text-[#FF453A] focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#FF453A]">
-                  Clear
-                </button>
-                <button type="button" onClick={saveLightningLaneWindow} className="min-h-12 rounded-full bg-[#0A84FF] px-5 py-2 font-black text-black focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]">
-                  Save
-                </button>
-              </div>
-            </section>
-          </div>
-        ) : null}
-
         <button
           type="button"
           onClick={addActivity}
@@ -2840,6 +2853,8 @@ function LandEditorSheet({
         </div>
       </section>
     </div>
+    {lightningLaneModal}
+    </>
   );
 }
 
