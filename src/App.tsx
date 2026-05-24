@@ -790,11 +790,10 @@ function FireworksOverlay({ onDone }: { onDone: () => void }) {
     if (!context) return undefined;
     const drawingContext = context;
 
-    let animationFrame = 0;
-    let finishTimeout = 0;
-    let startTime = 0;
-    let lastTime = 0;
-    let isDone = false;
+    let animationFrameId: number | null = null;
+    const animationStartTime = performance.now();
+    let lastTime = animationStartTime;
+    let isFireworksActive = true;
     const particles: FireworkParticle[] = [];
     const colors = ['#FFD166', '#FFFFFF', '#7CC7FF', '#FF8CC6'];
     const bursts = [
@@ -803,6 +802,20 @@ function FireworksOverlay({ onDone }: { onDone: () => void }) {
       { time: 980, x: 0.48, y: 0.5 },
     ];
     const triggeredBursts = new Set<number>();
+
+    function stopFireworks(shouldNotify = true) {
+      if (!isFireworksActive) return;
+
+      isFireworksActive = false;
+      if (animationFrameId !== null) {
+        window.cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
+      }
+      particles.length = 0;
+      triggeredBursts.clear();
+      drawingContext.clearRect(0, 0, window.innerWidth, window.innerHeight);
+      if (shouldNotify) onDone();
+    }
 
     function resizeCanvas() {
       const pixelRatio = window.devicePixelRatio || 1;
@@ -814,6 +827,8 @@ function FireworksOverlay({ onDone }: { onDone: () => void }) {
     }
 
     function addBurst(centerX: number, centerY: number) {
+      if (!isFireworksActive || performance.now() - animationStartTime >= 3_000) return;
+
       const particleCount = 42;
 
       for (let index = 0; index < particleCount; index += 1) {
@@ -833,17 +848,18 @@ function FireworksOverlay({ onDone }: { onDone: () => void }) {
       }
     }
 
-    function drawFrame(timestamp: number) {
-      if (isDone) return;
+    function drawFrame() {
+      if (!isFireworksActive) return;
 
-      if (!startTime) {
-        startTime = timestamp;
-        lastTime = timestamp;
+      const now = performance.now();
+      const elapsed = now - animationStartTime;
+      if (elapsed >= 3_000) {
+        stopFireworks();
+        return;
       }
 
-      const elapsed = timestamp - startTime;
-      const delta = Math.min(timestamp - lastTime, 34);
-      lastTime = timestamp;
+      const delta = Math.min(now - lastTime, 34);
+      lastTime = now;
 
       drawingContext.clearRect(0, 0, window.innerWidth, window.innerHeight);
       drawingContext.save();
@@ -852,7 +868,9 @@ function FireworksOverlay({ onDone }: { onDone: () => void }) {
       bursts.forEach((burst, index) => {
         if (elapsed >= burst.time && !triggeredBursts.has(index)) {
           triggeredBursts.add(index);
-          addBurst(window.innerWidth * burst.x, window.innerHeight * burst.y);
+          if (elapsed < 3_000) {
+            addBurst(window.innerWidth * burst.x, window.innerHeight * burst.y);
+          }
         }
       });
 
@@ -881,37 +899,15 @@ function FireworksOverlay({ onDone }: { onDone: () => void }) {
 
       drawingContext.restore();
 
-      if (elapsed < 3_000) {
-        animationFrame = window.requestAnimationFrame(drawFrame);
-        return;
-      }
-
-      if (!isDone) {
-        isDone = true;
-        particles.length = 0;
-        triggeredBursts.clear();
-        drawingContext.clearRect(0, 0, window.innerWidth, window.innerHeight);
-        window.cancelAnimationFrame(animationFrame);
-        onDone();
-      }
+      animationFrameId = window.requestAnimationFrame(drawFrame);
     }
 
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
-    animationFrame = window.requestAnimationFrame(drawFrame);
-    finishTimeout = window.setTimeout(() => {
-      if (isDone) return;
-      isDone = true;
-      particles.length = 0;
-      triggeredBursts.clear();
-      drawingContext.clearRect(0, 0, window.innerWidth, window.innerHeight);
-      window.cancelAnimationFrame(animationFrame);
-      onDone();
-    }, 3_000);
+    animationFrameId = window.requestAnimationFrame(drawFrame);
 
     return () => {
-      window.cancelAnimationFrame(animationFrame);
-      window.clearTimeout(finishTimeout);
+      stopFireworks(false);
       window.removeEventListener('resize', resizeCanvas);
     };
   }, [onDone]);
