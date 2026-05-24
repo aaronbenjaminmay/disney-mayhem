@@ -58,6 +58,17 @@ type FireworkParticle = {
   color: string;
   life: number;
   maxLife: number;
+  drag: number;
+};
+
+type FireworkBurst = {
+  time: number;
+  x: number;
+  y: number;
+  lifetime: number;
+  speedMin: number;
+  speedMax: number;
+  particleCount: number;
 };
 
 function normalizeDisplayText(value?: string): string {
@@ -773,8 +784,19 @@ function TodayIntelCard({
   );
 }
 
-function FireworksOverlay({ onDone }: { onDone: () => void }) {
+function FireworksOverlay({ fireworksKey, onComplete }: { fireworksKey: number; onComplete: () => void }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
+  const startTimeRef = useRef(0);
+  const lastTimeRef = useRef(0);
+  const particlesRef = useRef<FireworkParticle[]>([]);
+  const completedRef = useRef(false);
+  const triggeredBurstsRef = useRef(new Set<number>());
+  const onCompleteRef = useRef(onComplete);
+
+  useEffect(() => {
+    onCompleteRef.current = onComplete;
+  }, [onComplete]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -782,39 +804,46 @@ function FireworksOverlay({ onDone }: { onDone: () => void }) {
     const overlayCanvas = canvas;
 
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      const timeout = window.setTimeout(onDone, 450);
-      return () => window.clearTimeout(timeout);
+      completedRef.current = false;
+      const timeout = window.setTimeout(() => {
+        if (completedRef.current) return;
+        completedRef.current = true;
+        onCompleteRef.current();
+      }, 450);
+      return () => {
+        completedRef.current = true;
+        window.clearTimeout(timeout);
+      };
     }
 
     const context = overlayCanvas.getContext('2d');
     if (!context) return undefined;
     const drawingContext = context;
 
-    let animationFrameId: number | null = null;
-    const animationStartTime = performance.now();
-    let lastTime = animationStartTime;
-    let isFireworksActive = true;
-    const particles: FireworkParticle[] = [];
+    startTimeRef.current = performance.now();
+    lastTimeRef.current = startTimeRef.current;
+    particlesRef.current = [];
+    completedRef.current = false;
+    triggeredBurstsRef.current = new Set<number>();
     const colors = ['#FFD166', '#FFFFFF', '#7CC7FF', '#FF8CC6'];
-    const bursts = [
-      { time: 300, x: 0.28, y: 0.42 },
-      { time: 620, x: 0.68, y: 0.35 },
-      { time: 980, x: 0.48, y: 0.5 },
+    const bursts: FireworkBurst[] = [
+      { time: 250, x: 0.32, y: 0.28, lifetime: 1_200, speedMin: 1.8, speedMax: 4.4, particleCount: 38 },
+      { time: 850, x: 0.68, y: 0.22, lifetime: 1_900, speedMin: 1.1, speedMax: 2.9, particleCount: 48 },
+      { time: 1_450, x: 0.5, y: 0.32, lifetime: 1_500, speedMin: 1.2, speedMax: 3.2, particleCount: 30 },
     ];
-    const triggeredBursts = new Set<number>();
 
     function stopFireworks(shouldNotify = true) {
-      if (!isFireworksActive) return;
+      if (completedRef.current) return;
 
-      isFireworksActive = false;
-      if (animationFrameId !== null) {
-        window.cancelAnimationFrame(animationFrameId);
-        animationFrameId = null;
+      completedRef.current = true;
+      if (animationFrameRef.current !== null) {
+        window.cancelAnimationFrame(animationFrameRef.current);
+        animationFrameRef.current = null;
       }
-      particles.length = 0;
-      triggeredBursts.clear();
+      particlesRef.current = [];
+      triggeredBurstsRef.current.clear();
       drawingContext.clearRect(0, 0, window.innerWidth, window.innerHeight);
-      if (shouldNotify) onDone();
+      if (shouldNotify) onCompleteRef.current();
     }
 
     function resizeCanvas() {
@@ -826,60 +855,63 @@ function FireworksOverlay({ onDone }: { onDone: () => void }) {
       drawingContext.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
     }
 
-    function addBurst(centerX: number, centerY: number) {
-      if (!isFireworksActive || performance.now() - animationStartTime >= 3_000) return;
+    function addBurst(burst: FireworkBurst) {
+      const elapsed = performance.now() - startTimeRef.current;
+      if (completedRef.current || elapsed >= 3_000) return;
 
-      const particleCount = 42;
+      const centerX = window.innerWidth * burst.x;
+      const centerY = window.innerHeight * burst.y;
 
-      for (let index = 0; index < particleCount; index += 1) {
-        const angle = (Math.PI * 2 * index) / particleCount;
-        const speed = 1.4 + Math.random() * 3.6;
+      for (let index = 0; index < burst.particleCount; index += 1) {
+        const angle = (Math.PI * 2 * index) / burst.particleCount;
+        const speed = burst.speedMin + Math.random() * (burst.speedMax - burst.speedMin);
 
-        particles.push({
+        particlesRef.current.push({
           x: centerX,
           y: centerY,
           vx: Math.cos(angle) * speed,
-          vy: Math.sin(angle) * speed - 0.5,
+          vy: Math.sin(angle) * speed - 0.35,
           size: 1.5 + Math.random() * 2.2,
           color: colors[index % colors.length],
           life: 0,
-          maxLife: 900 + Math.random() * 450,
+          maxLife: burst.lifetime + Math.random() * 220,
+          drag: 0.975 + Math.random() * 0.012,
         });
       }
     }
 
     function drawFrame() {
-      if (!isFireworksActive) return;
+      if (completedRef.current) return;
 
       const now = performance.now();
-      const elapsed = now - animationStartTime;
+      const elapsed = now - startTimeRef.current;
       if (elapsed >= 3_000) {
         stopFireworks();
         return;
       }
 
-      const delta = Math.min(now - lastTime, 34);
-      lastTime = now;
+      const delta = Math.min(now - lastTimeRef.current, 34);
+      lastTimeRef.current = now;
 
       drawingContext.clearRect(0, 0, window.innerWidth, window.innerHeight);
       drawingContext.save();
       drawingContext.globalCompositeOperation = 'lighter';
 
       bursts.forEach((burst, index) => {
-        if (elapsed >= burst.time && !triggeredBursts.has(index)) {
-          triggeredBursts.add(index);
-          if (elapsed < 3_000) {
-            addBurst(window.innerWidth * burst.x, window.innerHeight * burst.y);
-          }
+        if (elapsed >= burst.time && !triggeredBurstsRef.current.has(index)) {
+          triggeredBurstsRef.current.add(index);
+          addBurst(burst);
         }
       });
 
+      const particles = particlesRef.current;
       for (let index = particles.length - 1; index >= 0; index -= 1) {
         const particle = particles[index];
         particle.life += delta;
         particle.x += particle.vx * (delta / 16);
         particle.y += particle.vy * (delta / 16);
-        particle.vy += 0.035 * (delta / 16);
+        particle.vx *= particle.drag;
+        particle.vy = particle.vy * particle.drag + 0.022 * (delta / 16);
 
         const progress = particle.life / particle.maxLife;
         if (progress >= 1) {
@@ -899,18 +931,18 @@ function FireworksOverlay({ onDone }: { onDone: () => void }) {
 
       drawingContext.restore();
 
-      animationFrameId = window.requestAnimationFrame(drawFrame);
+      animationFrameRef.current = window.requestAnimationFrame(drawFrame);
     }
 
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
-    animationFrameId = window.requestAnimationFrame(drawFrame);
+    animationFrameRef.current = window.requestAnimationFrame(drawFrame);
 
     return () => {
       stopFireworks(false);
       window.removeEventListener('resize', resizeCanvas);
     };
-  }, [onDone]);
+  }, [fireworksKey]);
 
   return (
     <div className="pointer-events-none fixed inset-0 z-[2] animate-[screen-fade_160ms_ease-out_both]" aria-hidden="true">
@@ -3340,6 +3372,8 @@ export default function App() {
   }
 
   function handleWordmarkTap() {
+    if (fireworksRun > 0) return;
+
     const timestamp = Date.now();
     wordmarkTapTimes.current = [...wordmarkTapTimes.current, timestamp].filter((tapTime) => timestamp - tapTime <= 1_500);
 
@@ -3347,6 +3381,10 @@ export default function App() {
 
     if (wordmarkTapTimes.current.length >= 3) {
       wordmarkTapTimes.current = [];
+      if (wordmarkTapReset.current) {
+        window.clearTimeout(wordmarkTapReset.current);
+        wordmarkTapReset.current = undefined;
+      }
       setFireworksRun((run) => run + 1);
       return;
     }
@@ -3831,7 +3869,7 @@ export default function App() {
         aria-hidden="true"
         className="pointer-events-none fixed inset-0 z-[1] bg-[linear-gradient(to_bottom,rgba(0,0,0,0.12),rgba(0,0,0,0.38))]"
       />
-      {fireworksRun > 0 ? <FireworksOverlay key={fireworksRun} onDone={() => setFireworksRun(0)} /> : null}
+      {fireworksRun > 0 ? <FireworksOverlay key={fireworksRun} fireworksKey={fireworksRun} onComplete={() => setFireworksRun(0)} /> : null}
       <div key={`${activeTab}-${selectedDayId ?? 'all'}`} className={`screen-fade relative z-10 mx-auto max-w-4xl ${phase === 'before' ? 'pb-8' : 'pb-20'}`}>
         {phase === 'before' && activeTab !== 'today' && activeTab !== 'days' && activeTab !== 'reservations' ? (
           <div className="sticky top-0 z-20 px-4 pb-2 pt-3 backdrop-blur-sm">
