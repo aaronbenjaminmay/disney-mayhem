@@ -1648,16 +1648,6 @@ type ReservationDayCardAddState = {
   notes: string;
 };
 
-type AddLandCardState = {
-  dayId: string;
-  land: string;
-  time: string;
-  endTime: string;
-  notes: string;
-  placement: ItemPlacement;
-  activities: LandEditorActivity[];
-};
-
 type LandDeleteState = {
   dayId: string;
   parentItem: TimelineActivityBlock;
@@ -1677,6 +1667,7 @@ type LandEditorActivity = {
 };
 
 type LandEditorState = {
+  mode: 'create' | 'edit';
   dayId: string;
   groupId: string;
   parentItem: TimelineActivityBlock;
@@ -1684,6 +1675,9 @@ type LandEditorState = {
   notes: string;
   canEditParentDetails: boolean;
   activities: LandEditorActivity[];
+  time?: string;
+  endTime?: string;
+  placement?: ItemPlacement;
 };
 
 type LightningLanePickerState = {
@@ -2166,223 +2160,6 @@ function ItemEditorSheet({
   );
 }
 
-function AddLandCardSheet({
-  editor,
-  day,
-  onChange,
-  onSave,
-  onCancel,
-}: {
-  editor: AddLandCardState;
-  day: TripDay;
-  onChange: (editor: AddLandCardState) => void;
-  onSave: () => void;
-  onCancel: () => void;
-}) {
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') onCancel();
-    }
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onCancel]);
-
-  function updateActivity(id: string, draft: EditableActivityFields) {
-    onChange({
-      ...editor,
-      activities: editor.activities.map((activity) => (activity.id === id ? { ...activity, draft } : activity)),
-    });
-  }
-
-  function addActivity() {
-    onChange({
-      ...editor,
-      activities: [
-        ...editor.activities,
-        {
-          id: `draft-activity-${Date.now()}`,
-          isNew: true,
-          draft: {
-            title: '',
-            location: editor.land,
-            notes: '',
-            lightningLaneTime: '',
-            lightningLaneEndTime: '',
-            lightningLaneLabel: '',
-          },
-        },
-      ],
-    });
-  }
-
-  function removeActivity(id: string) {
-    onChange({ ...editor, activities: editor.activities.filter((activity) => activity.id !== id) });
-  }
-
-  function setPlacement(value: string) {
-    if (value === 'end') {
-      onChange({ ...editor, placement: { mode: 'end' } });
-      return;
-    }
-
-    const [mode, targetItemId] = value.split(':') as ['before' | 'after', string];
-    onChange({ ...editor, placement: { mode, targetItemId } });
-  }
-
-  const inputClass =
-    'mt-2 min-h-12 w-full rounded-2xl border border-[#2C2C2E] bg-[#111111] px-4 text-base font-bold text-white outline-none focus:border-[#0A84FF] focus:ring-4 focus:ring-[#0A84FF]/30';
-
-  return (
-    <div className="fixed inset-0 z-40 flex items-end bg-black/70 px-3 py-4 sm:items-center sm:justify-center" role="presentation">
-      <section
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="land-card-add-title"
-        className="glass-surface screen-fade max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-[2rem] p-5"
-      >
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-sm font-black uppercase tracking-wide text-[#0A84FF]">Add land card</p>
-            <h2 id="land-card-add-title" className="mt-1 text-2xl font-black text-white">
-              {day.label}
-            </h2>
-          </div>
-          <button type="button" onClick={onCancel} className="ios-icon-button" aria-label="Close" title="Close">
-            <LucideIcon name="x" size={20} />
-          </button>
-        </div>
-
-        <div className="mt-5 grid gap-4 sm:grid-cols-2">
-          <label className="block sm:col-span-2">
-            <span className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Land / Area name</span>
-            <input
-              value={editor.land}
-              onChange={(event) => onChange({ ...editor, land: event.target.value })}
-              className={inputClass}
-              required
-            />
-          </label>
-          <label className="block">
-            <span className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Time</span>
-            <input
-              type="time"
-              value={editor.time}
-              onChange={(event) => onChange({ ...editor, time: event.target.value })}
-              className={inputClass}
-            />
-          </label>
-          <label className="block">
-            <span className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">End time</span>
-            <input
-              type="time"
-              value={editor.endTime}
-              onChange={(event) => onChange({ ...editor, endTime: event.target.value })}
-              className={inputClass}
-            />
-          </label>
-          <label className="block sm:col-span-2">
-            <span className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Placement</span>
-            <select
-              value={editor.placement.mode === 'end' ? 'end' : `${editor.placement.mode}:${editor.placement.targetItemId ?? ''}`}
-              onChange={(event) => setPlacement(event.target.value)}
-              className={inputClass}
-            >
-              <option value="end">End of day</option>
-              {day.items.map((item) => (
-                <option key={`before-${item.id}`} value={`before:${item.id}`}>
-                  Before {formatTimeRange(item)} · {item.title}
-                </option>
-              ))}
-              {day.items.map((item) => (
-                <option key={`after-${item.id}`} value={`after:${item.id}`}>
-                  After {formatTimeRange(item)} · {item.title}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="block sm:col-span-2">
-            <span className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Notes</span>
-            <textarea
-              value={editor.notes}
-              onChange={(event) => onChange({ ...editor, notes: event.target.value })}
-              className="mt-2 min-h-24 w-full rounded-2xl border border-[#2C2C2E] bg-[#111111] px-4 py-3 text-base font-bold text-white outline-none focus:border-[#0A84FF] focus:ring-4 focus:ring-[#0A84FF]/30"
-            />
-          </label>
-        </div>
-
-        <div className="mt-6 space-y-4">
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Initial rides</p>
-            <button type="button" onClick={addActivity} className="ios-icon-button" aria-label="Add ride" title="Add ride">
-              <LucideIcon name="plus" size={20} />
-            </button>
-          </div>
-          {editor.activities.map((activity, index) => (
-            <section key={activity.id} className="rounded-[1.25rem] border border-white/[0.08] bg-[#1C1C1E]/50 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-[12px] font-black uppercase tracking-[0.16em] text-[#A1A1A6]">Ride {index + 1}</p>
-                <button type="button" onClick={() => removeActivity(activity.id)} className="ios-icon-button ios-icon-button-danger" aria-label="Remove item" title="Remove item">
-                  <LucideIcon name="trash" size={20} />
-                </button>
-              </div>
-              <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                <label className="block sm:col-span-2">
-                  <span className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Title</span>
-                  <input
-                    value={activity.draft.title}
-                    onChange={(event) => updateActivity(activity.id, { ...activity.draft, title: event.target.value })}
-                    className={inputClass}
-                  />
-                </label>
-                <label className="block sm:col-span-2">
-                  <span className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Notes</span>
-                  <textarea
-                    value={activity.draft.notes ?? ''}
-                    onChange={(event) => updateActivity(activity.id, { ...activity.draft, notes: event.target.value })}
-                    className="mt-2 min-h-20 w-full rounded-2xl border border-[#2C2C2E] bg-[#111111] px-4 py-3 text-base font-bold text-white outline-none focus:border-[#0A84FF] focus:ring-4 focus:ring-[#0A84FF]/30"
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Lightning Lane start</span>
-                  <input
-                    type="time"
-                    value={activity.draft.lightningLaneStart ?? activity.draft.lightningLaneTime ?? ''}
-                    onChange={(event) => {
-                      const start = event.target.value;
-                      updateActivity(activity.id, {
-                        ...activity.draft,
-                        lightningLaneStart: start,
-                        lightningLaneTime: start,
-                        lightningLaneEnd: start ? addMinutesToTime(start, 60) : '',
-                        lightningLaneEndTime: start ? addMinutesToTime(start, 60) : '',
-                        lightningLaneLabel: start ? 'LL' : '',
-                      });
-                    }}
-                    className={inputClass}
-                  />
-                </label>
-                <p className="self-end pb-3 text-sm font-semibold text-[#A1A1A6]">
-                  {formatOptionalTimeRange(activity.draft.lightningLaneStart ?? activity.draft.lightningLaneTime, activity.draft.lightningLaneEnd ?? activity.draft.lightningLaneEndTime) ?? 'LL window not set'}
-                </p>
-              </div>
-            </section>
-          ))}
-        </div>
-
-        <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-end">
-          <button type="button" onClick={onCancel} className="min-h-12 rounded-full border border-[#3A3A3C] bg-[#1C1C1E] px-5 py-2 font-black text-white focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]">
-            Cancel
-          </button>
-          <button type="button" onClick={onSave} className="min-h-12 rounded-full bg-[#0A84FF] px-5 py-2 font-black text-black focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]">
-            Save
-          </button>
-        </div>
-      </section>
-    </div>
-  );
-}
-
 function DeleteLandCardSheet({
   land,
   onCancel,
@@ -2491,6 +2268,7 @@ function DeleteItemSheet({
 
 function LandEditorSheet({
   editor,
+  day,
   orderState,
   onChange,
   onSave,
@@ -2500,6 +2278,7 @@ function LandEditorSheet({
   onMoveLater,
 }: {
   editor: LandEditorState;
+  day: TripDay;
   orderState?: { canMoveEarlier: boolean; canMoveLater: boolean };
   onChange: (editor: LandEditorState) => void;
   onSave: () => void;
@@ -2575,6 +2354,16 @@ function LandEditorSheet({
     const [activity] = activities.splice(index, 1);
     activities.splice(nextIndex, 0, activity);
     onChange({ ...editor, activities });
+  }
+
+  function setPlacement(value: string) {
+    if (value === 'end') {
+      onChange({ ...editor, placement: { mode: 'end' } });
+      return;
+    }
+
+    const [mode, targetItemId] = value.split(':') as ['before' | 'after', string];
+    onChange({ ...editor, placement: { mode, targetItemId } });
   }
 
   function openLightningLanePicker(activity: LandEditorActivity) {
@@ -2706,9 +2495,9 @@ function LandEditorSheet({
       >
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-sm font-black uppercase tracking-wide text-[#0A84FF]">Edit land card</p>
+            <p className="text-sm font-black uppercase tracking-wide text-[#0A84FF]">{editor.mode === 'create' ? 'Add land card' : 'Edit land card'}</p>
             <h2 id="land-editor-title" className="mt-1 text-2xl font-black text-white">
-              {editor.land}
+              {editor.mode === 'create' ? day.label : editor.land}
             </h2>
           </div>
           <button type="button" onClick={onCancel} className="ios-icon-button" aria-label="Close" title="Close">
@@ -2735,6 +2524,50 @@ function LandEditorSheet({
                 className="mt-2 min-h-24 w-full rounded-2xl border border-[#2C2C2E] bg-[#111111] px-4 py-3 text-base font-bold text-white outline-none focus:border-[#0A84FF] focus:ring-4 focus:ring-[#0A84FF]/30"
               />
             </label>
+          ) : null}
+          {editor.mode === 'create' ? (
+            <>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block">
+                  <span className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Time</span>
+                  <input
+                    type="time"
+                    value={editor.time ?? ''}
+                    onChange={(event) => onChange({ ...editor, time: event.target.value })}
+                    className={inputClass}
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">End time</span>
+                  <input
+                    type="time"
+                    value={editor.endTime ?? ''}
+                    onChange={(event) => onChange({ ...editor, endTime: event.target.value })}
+                    className={inputClass}
+                  />
+                </label>
+              </div>
+              <label className="block">
+                <span className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Placement</span>
+                <select
+                  value={editor.placement?.mode === 'end' || !editor.placement ? 'end' : `${editor.placement.mode}:${editor.placement.targetItemId ?? ''}`}
+                  onChange={(event) => setPlacement(event.target.value)}
+                  className={inputClass}
+                >
+                  <option value="end">End of day</option>
+                  {day.items.map((item) => (
+                    <option key={`before-${item.id}`} value={`before:${item.id}`}>
+                      Before {formatTimeRange(item)} · {item.title}
+                    </option>
+                  ))}
+                  {day.items.map((item) => (
+                    <option key={`after-${item.id}`} value={`after:${item.id}`}>
+                      After {formatTimeRange(item)} · {item.title}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </>
           ) : null}
         </div>
 
@@ -2824,6 +2657,7 @@ function LandEditorSheet({
           Add ride
         </button>
 
+        {editor.mode === 'edit' ? (
         <div className="mt-6 border-t border-white/[0.08] pt-5">
           <button
             type="button"
@@ -2834,6 +2668,7 @@ function LandEditorSheet({
             Delete land card
           </button>
         </div>
+        ) : null}
 
         <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:justify-end">
           <button
@@ -3300,7 +3135,6 @@ export default function App() {
   const [addChoice, setAddChoice] = useState<AddChoiceState | null>(null);
   const [reservationAddChoice, setReservationAddChoice] = useState<ReservationAddChoiceState | null>(null);
   const [reservationDayCardAdd, setReservationDayCardAdd] = useState<ReservationDayCardAddState | null>(null);
-  const [landCardAdd, setLandCardAdd] = useState<AddLandCardState | null>(null);
   const [landEditor, setLandEditor] = useState<LandEditorState | null>(null);
   const [landDelete, setLandDelete] = useState<LandDeleteState | null>(null);
   const [itemDelete, setItemDelete] = useState<ItemDeleteState | null>(null);
@@ -3462,27 +3296,30 @@ export default function App() {
   }
 
   function openLandCardAdd(dayId: string) {
-    setLandCardAdd({
+    const blockId = `local-land-${dayId}-${Date.now()}`;
+    const groupId = getLandGroupId(dayId, blockId, 'new-land-card');
+    const parentItem: TimelineActivityBlock = {
+      id: blockId,
+      type: 'flexible',
+      title: '',
+      area: '',
+      location: '',
+      activities: [],
+      placement: { mode: 'end' },
+    };
+
+    setLandEditor({
+      mode: 'create',
       dayId,
+      groupId,
+      parentItem,
       land: '',
       time: '',
       endTime: '',
       notes: '',
       placement: { mode: 'end' },
-      activities: [
-        {
-          id: `draft-activity-${Date.now()}`,
-          isNew: true,
-          draft: {
-            title: '',
-            location: '',
-            notes: '',
-            lightningLaneTime: '',
-            lightningLaneEndTime: '',
-            lightningLaneLabel: '',
-          },
-        },
-      ],
+      canEditParentDetails: true,
+      activities: [],
     });
   }
 
@@ -3590,6 +3427,7 @@ export default function App() {
   function openLandEditor(day: TripDay, item: TimelineActivityBlock, group: TimelineLandGroup) {
     const canEditParentDetails = group.activities.length >= item.activities.length;
     setLandEditor({
+      mode: 'edit',
       dayId: day.id,
       groupId: group.groupId,
       parentItem: item,
@@ -3703,52 +3541,6 @@ export default function App() {
     setEditor(null);
   }
 
-  function saveLandCardAdd() {
-    if (!landCardAdd) return;
-
-    const land = landCardAdd.land.trim();
-    if (!land) {
-      window.alert('Land / Area name is required.');
-      return;
-    }
-
-    const activityDrafts = landCardAdd.activities.filter((activity) => activity.draft.title.trim() || activity.draft.notes?.trim());
-    if (activityDrafts.some((activity) => !activity.draft.title.trim())) {
-      window.alert('Each ride needs a title before saving.');
-      return;
-    }
-
-    const blockId = `local-land-${landCardAdd.dayId}-${Date.now()}`;
-    const groupId = getLandGroupId(landCardAdd.dayId, blockId, land);
-    const activities = activityDrafts.map((activity, index) =>
-      createActivityFromFields(`local-activity-${groupId}-${index + 1}-${Date.now()}`, {
-        ...activity.draft,
-        landGroupId: groupId,
-        title: activity.draft.title.trim(),
-        location: land,
-        time: '',
-        endTime: '',
-        displayOrder: index,
-      }),
-    );
-
-    const item: TripItem = {
-      id: blockId,
-      type: 'flexible',
-      time: landCardAdd.time || undefined,
-      endTime: landCardAdd.endTime || undefined,
-      title: `${land} activities`,
-      area: land,
-      location: land,
-      notes: landCardAdd.notes.trim() || undefined,
-      placement: landCardAdd.placement,
-      activities,
-    };
-
-    tripStorage.addItem(landCardAdd.dayId, item);
-    setLandCardAdd(null);
-  }
-
   function requestItemDelete(itemId: string, title: string) {
     setItemDelete({ itemId, title });
   }
@@ -3816,6 +3608,39 @@ export default function App() {
     const visibleActivities = landEditor.activities.filter((activity) => !activity.removed);
     if (visibleActivities.some((activity) => !activity.draft.title.trim())) {
       window.alert('Each ride needs a title before saving.');
+      return;
+    }
+
+    if (landEditor.mode === 'create') {
+      const activities = visibleActivities.map((activity, index) =>
+        createActivityFromFields(activity.id, {
+          ...activity.draft,
+          landGroupId: landEditor.groupId,
+          title: activity.draft.title.trim(),
+          location: land,
+          time: '',
+          endTime: '',
+          lightningLaneStart: activity.draft.lightningLaneTime ?? activity.draft.lightningLaneStart,
+          lightningLaneEnd: activity.draft.lightningLaneEndTime ?? activity.draft.lightningLaneEnd,
+          displayOrder: index,
+        }),
+      );
+
+      const item: TripItem = {
+        id: landEditor.parentItem.id,
+        type: 'flexible',
+        time: landEditor.time || undefined,
+        endTime: landEditor.endTime || undefined,
+        title: `${land} activities`,
+        area: land,
+        location: land,
+        notes: landEditor.notes.trim() || undefined,
+        placement: landEditor.placement ?? { mode: 'end' },
+        activities,
+      };
+
+      tripStorage.addItem(landEditor.dayId, item);
+      setLandEditor(null);
       return;
     }
 
@@ -3971,18 +3796,10 @@ export default function App() {
           onCancel={() => setReservationDayCardAdd(null)}
         />
       ) : null}
-      {landCardAdd ? (
-        <AddLandCardSheet
-          editor={landCardAdd}
-          day={tripDays.find((day) => day.id === landCardAdd.dayId) ?? activeState.day}
-          onChange={setLandCardAdd}
-          onSave={saveLandCardAdd}
-          onCancel={() => setLandCardAdd(null)}
-        />
-      ) : null}
       {landEditor ? (
         <LandEditorSheet
           editor={landEditor}
+          day={tripDays.find((day) => day.id === landEditor.dayId) ?? activeState.day}
           orderState={getLandEditorOrderState()}
           onChange={setLandEditor}
           onSave={saveLandEditor}
