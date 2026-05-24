@@ -1,5 +1,13 @@
 # Disney Mayhem 🎆
 
+## 📱 Preview
+
+<p align="center">
+  <img src="docs/preview.gif" alt="Disney Mayhem preview" width="300" />
+</p>
+
+---
+
 A shared Disney trip planner, live park companion, and magical notification layer built for a family trip.
 
 This project started as a simple itinerary tool and evolved into a full experience — one that begins before the trip and continues through every park day.
@@ -57,6 +65,7 @@ VITE_SUPABASE_ANON_KEY=
 VITE_VAPID_PUBLIC_KEY=
 VITE_TRIP_ID=
 ```
+---
 
 ## 🔔 Push Notifications Setup
 
@@ -70,7 +79,9 @@ To enable notifications:
 1. Generate your own VAPID keys  
 2. Add them to Supabase secrets  
 3. Deploy the Edge Function  
-4. Configure scheduled jobs  
+4. Configure scheduled jobs
+
+---
 
 ## ⚠️ Notes for Forking
 
@@ -81,11 +92,15 @@ If you fork this project:
 - Scheduled notifications will not work without setup
 This project is designed to be adaptable to any trip or event.
 
+---
+
 ## 🧭 Versioning
 
 - v1.0.0 — Core planner + notifications
 - v1.0.1 — Fireworks easter egg
 - v1.0.2 — Stability and consistency fixes
+
+---
 
 ## 💬 Why this exists
 
