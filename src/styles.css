@@ -36,6 +36,8 @@ body {
 }
 
 button,
+input,
+select,
 textarea {
   font: inherit;
 }
@@ -115,6 +117,46 @@ button:active {
   background: rgba(28, 28, 30, 0.6);
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+[role='dialog'] label,
+[role='dialog'] form,
+[role='dialog'] .grid,
+[role='dialog'] .grid > *,
+[role='dialog'] .flex,
+[role='dialog'] .flex > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+[role='dialog'] input,
+[role='dialog'] select,
+[role='dialog'] textarea {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+[role='dialog'] input[type='date'],
+[role='dialog'] input[type='time'] {
+  display: block;
+  min-height: 3rem;
+  border-radius: 1rem;
+  color-scheme: dark;
+  line-height: normal;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+[role='dialog'] input[type='date']::-webkit-calendar-picker-indicator,
+[role='dialog'] input[type='time']::-webkit-calendar-picker-indicator {
+  flex: 0 0 auto;
+  max-width: 1.5rem;
+  margin-left: auto;
+  padding: 0;
+  opacity: 0.75;
+  filter: invert(1);
 }
 
 @supports ((backdrop-filter: blur(20px)) or (-webkit-backdrop-filter: blur(20px))) {
