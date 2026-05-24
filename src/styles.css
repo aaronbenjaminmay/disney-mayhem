@@ -122,11 +122,20 @@ button:active {
 [role='dialog'] label,
 [role='dialog'] form,
 [role='dialog'] .grid,
-[role='dialog'] .grid > *,
-[role='dialog'] .flex,
-[role='dialog'] .flex > * {
+[role='dialog'] .grid > * {
   min-width: 0;
   max-width: 100%;
+}
+
+[role='dialog'] .ios-icon-button {
+  width: 2.75rem;
+  height: 2.75rem;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  flex: 0 0 2.75rem;
+  border-radius: 9999px;
+  align-items: center;
+  justify-content: center;
 }
 
 [role='dialog'] input,
