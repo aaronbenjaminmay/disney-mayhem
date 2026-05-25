@@ -36,6 +36,7 @@ jobs:
           VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
           VITE_TRIP_ID: ${{ vars.VITE_TRIP_ID }}
           VITE_VAPID_PUBLIC_KEY: ${{ vars.VITE_VAPID_PUBLIC_KEY }}
+          VITE_EDIT_KEY: ${{ vars.VITE_EDIT_KEY }}
 
       - name: Upload Pages Artifact
         uses: actions/upload-pages-artifact@v3
