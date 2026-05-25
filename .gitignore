@@ -4,5 +4,7 @@ dist
 .DS_Store
 *.local
 .env
+.env.local
+.env.*.local
 .vscode/
 supabase/.temp/
