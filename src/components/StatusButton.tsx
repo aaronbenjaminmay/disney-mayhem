@@ -5,7 +5,7 @@ import { LucideIcon } from './LucideIcon';
 type StatusButtonProps = {
   id: string;
   status?: ItemStatus;
-  onCycle: (id: string) => void;
+  onCycle?: (id: string) => void;
 };
 
 function MouseHeadIcon() {
@@ -34,6 +34,8 @@ export function StatusButton({ id, status = 'todo', onCycle }: StatusButtonProps
     previousDone.current = isDone;
     return undefined;
   }, [isDone]);
+
+  if (!onCycle) return null;
 
   return (
     <button

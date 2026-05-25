@@ -6,7 +6,7 @@ import { StatusButton } from './StatusButton';
 type ItemCardProps = {
   item: TripItem;
   statuses: Record<string, ItemStatus>;
-  onCycleStatus: (id: string) => void;
+  onCycleStatus?: (id: string) => void;
   onEdit?: (item: TripItem) => void;
   compact?: boolean;
 };

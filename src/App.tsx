@@ -49,6 +49,7 @@ type TimelineActivityBlock = TripItem & {
 
 const warnedUnknownStatusIds = new Set<string>();
 const warnedLandGroupMismatchIds = new Set<string>();
+const editUnlockStorageKey = 'disney_mayhem_edit_unlocked';
 
 type FireworkParticle = {
   x: number;
@@ -1240,6 +1241,87 @@ function NotificationSettingsControl() {
   );
 }
 
+function UnlockEditSheet({
+  value,
+  error,
+  onChange,
+  onUnlock,
+  onCancel,
+}: {
+  value: string;
+  error?: string;
+  onChange: (value: string) => void;
+  onUnlock: () => void;
+  onCancel: () => void;
+}) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') onCancel();
+      if (event.key === 'Enter') onUnlock();
+    }
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.requestAnimationFrame(() => inputRef.current?.focus());
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onCancel, onUnlock]);
+
+  return (
+    <div className="fixed inset-0 z-[90] flex items-end bg-black/70 px-3 py-4 sm:items-center sm:justify-center" role="presentation">
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="unlock-edit-title"
+        className="glass-surface screen-fade w-full max-w-md rounded-[2rem] p-5"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm font-black uppercase tracking-wide text-[#0A84FF]">Private controls</p>
+            <h2 id="unlock-edit-title" className="mt-1 text-2xl font-black text-white">
+              Unlock Edit Mode
+            </h2>
+          </div>
+          <button type="button" onClick={onCancel} className="ios-icon-button" aria-label="Close" title="Close">
+            <LucideIcon name="x" size={20} />
+          </button>
+        </div>
+
+        <label className="mt-5 block">
+          <span className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Edit key</span>
+          <input
+            ref={inputRef}
+            type="password"
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            className="mt-2 min-h-12 w-full rounded-2xl border border-[#2C2C2E] bg-[#111111] px-4 text-lg font-bold text-white outline-none focus:border-[#0A84FF] focus:ring-4 focus:ring-[#0A84FF]/30"
+          />
+        </label>
+        {error ? <p className="mt-3 text-sm font-semibold text-[#FF453A]">{error}</p> : null}
+
+        <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
+          <button type="button" onClick={onCancel} className="min-h-12 rounded-full border border-[#3A3A3C] bg-[#1C1C1E] px-5 py-2 font-black text-white focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]">
+            Cancel
+          </button>
+          <button type="button" onClick={onUnlock} className="min-h-12 rounded-full bg-[#0A84FF] px-5 py-2 font-black text-black focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF]">
+            Unlock
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function Toast({ message }: { message: string }) {
+  return (
+    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-[100] flex justify-center px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
+      <div className="glass-surface screen-fade rounded-full px-5 py-3 text-sm font-black text-white shadow-[0_12px_30px_rgba(0,0,0,0.45)]">
+        {message}
+      </div>
+    </div>
+  );
+}
+
 function TodayScreen({
   day,
   activeItem,
@@ -1258,10 +1340,13 @@ function TodayScreen({
   onOpenDay,
   onOpenReservations,
   onWordmarkTap,
+  wordmarkPressHandlers,
+  isWordmarkPressing,
+  canEdit,
 }: ReturnType<typeof getActiveScheduleState> & {
   statuses: Record<string, ItemStatus>;
-  onCycleStatus: (id: string) => void;
-  onEditItem: (dayId: string, item: TripItem) => void;
+  onCycleStatus?: (id: string) => void;
+  onEditItem?: (dayId: string, item: TripItem) => void;
   onViewFullDay: () => void;
   attentionItems: ReturnType<typeof getAttentionItems>;
   phase: ReturnType<typeof getTripPhase>;
@@ -1270,6 +1355,14 @@ function TodayScreen({
   onOpenDay: (dayId: string) => void;
   onOpenReservations: () => void;
   onWordmarkTap: () => void;
+  wordmarkPressHandlers: {
+    onPointerDown: () => void;
+    onPointerUp: () => void;
+    onPointerCancel: () => void;
+    onPointerLeave: () => void;
+  };
+  isWordmarkPressing: boolean;
+  canEdit: boolean;
 }) {
   if (phase === 'before') {
     const countdownUnits = [
@@ -1286,7 +1379,10 @@ function TodayScreen({
           <button
             type="button"
             onClick={onWordmarkTap}
-            className="mx-auto block rounded-2xl focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-4 focus-visible:outline-[#0A84FF]"
+            {...wordmarkPressHandlers}
+            className={`mx-auto block rounded-2xl transition duration-200 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-4 focus-visible:outline-[#0A84FF] ${
+              isWordmarkPressing ? 'scale-[0.97] drop-shadow-[0_0_20px_rgba(10,132,255,0.45)]' : ''
+            }`}
             aria-label="Disney Mayhem"
           >
             <img
@@ -1425,7 +1521,7 @@ function TodayScreen({
             </div>
           ) : null}
 
-          {nowItem ? (
+          {canEdit && nowItem && onEditItem ? (
             <button
               type="button"
               onClick={() => onEditItem(day.id, nowItem)}
@@ -1465,6 +1561,7 @@ function TodayScreen({
                 <h3 className="mt-2 text-[22px] font-black leading-tight text-white">{nextItem.title}</h3>
                 <p className="mt-2 text-[15px] font-semibold text-[#A1A1A6]">{getItemDisplayLocation(nextItem)}</p>
               </div>
+              {canEdit && onEditItem ? (
               <button
                 type="button"
                 onClick={() => onEditItem(day.id, nextItem)}
@@ -1474,6 +1571,7 @@ function TodayScreen({
               >
                 <LucideIcon name="pencil" size={20} />
               </button>
+              ) : null}
             </div>
           </div>
         ) : (
@@ -1503,6 +1601,7 @@ function TodayScreen({
                 <h3 className="mt-1 text-[18px] font-black leading-tight text-white">{item.title}</h3>
                 <p className="mt-1 text-[14px] text-[#A1A1A6]">{getItemDisplayLocation(item)}</p>
               </div>
+              {canEdit && onEditItem ? (
               <button
                 type="button"
                 onClick={() => onEditItem(day.id, item)}
@@ -1512,6 +1611,7 @@ function TodayScreen({
               >
                 <LucideIcon name="pencil" size={20} />
               </button>
+              ) : null}
             </li>
           ))}
           {(activeLand ? laterLands.length : laterItems.length) === 0 ? <li className="glass-surface rounded-[1.4rem] p-4 text-[15px] text-[#A1A1A6]">No later items for this day.</li> : null}
@@ -1586,7 +1686,7 @@ function AttentionScreen({
 }: {
   statuses: Record<string, ItemStatus>;
   attentionItems: ReturnType<typeof getAttentionItems>;
-  onEditItem: (dayId: string, item: TripItem) => void;
+  onEditItem?: (dayId: string, item: TripItem) => void;
 }) {
   return (
     <>
@@ -1600,6 +1700,7 @@ function AttentionScreen({
             <p className="text-sm font-black uppercase tracking-wide text-[#FF9F0A]">{formatDateLabel(day.date)}</p>
             <div className="mt-1 flex items-start justify-between gap-3">
               <h2 className="text-xl font-black text-white">{item.title}</h2>
+              {onEditItem ? (
               <button
                 type="button"
                 onClick={() => onEditItem(day.id, item)}
@@ -1609,6 +1710,7 @@ function AttentionScreen({
               >
                 <LucideIcon name="pencil" size={20} />
               </button>
+              ) : null}
             </div>
             <p className="mt-1 font-semibold text-[#A1A1A6]">{formatTimeRange(item)}</p>
             <p className="mt-1 text-sm text-[#A1A1A6]">{getItemDisplayLocation(item)}</p>
@@ -2706,9 +2808,9 @@ function FlexibleTimelineItem({
   item: TimelineActivityBlock;
   statuses: Record<string, ItemStatus>;
   landGroupOrders: Record<string, LandGroupOrder>;
-  onCycleStatus: (id: string) => void;
-  onEditItem: (dayId: string, item: TripItem) => void;
-  onEditLand: (day: TripDay, item: TimelineActivityBlock, group: TimelineLandGroup) => void;
+  onCycleStatus?: (id: string) => void;
+  onEditItem?: (dayId: string, item: TripItem) => void;
+  onEditLand?: (day: TripDay, item: TimelineActivityBlock, group: TimelineLandGroup) => void;
 }) {
   const itemStatus = statuses[getItemStatusKey(item)];
   const groups = groupActivitiesByLand(day, item, landGroupOrders);
@@ -2720,7 +2822,8 @@ function FlexibleTimelineItem({
           <p className="text-[12px] font-black uppercase tracking-[0.16em] text-[#0A84FF]">{formatTimeRange(item)}</p>
           <p className="mt-2 text-[15px] font-semibold text-[#A1A1A6]">{getItemDisplayLocation(item)}</p>
         </div>
-        <div className="flex gap-2">
+        {(onEditItem || onCycleStatus) ? <div className="flex gap-2">
+          {onEditItem ? (
           <button
             type="button"
             onClick={() => onEditItem(day.id, item)}
@@ -2730,8 +2833,9 @@ function FlexibleTimelineItem({
           >
             <LucideIcon name="pencil" size={20} />
           </button>
+          ) : null}
           <StatusButton id={item.id} status={itemStatus} onCycle={onCycleStatus} />
-        </div>
+        </div> : null}
       </div>
 
       {item.notes ? <p className="mt-4 text-[15px] leading-6 text-[#A1A1A6]">{item.notes}</p> : null}
@@ -2741,6 +2845,7 @@ function FlexibleTimelineItem({
           <section key={group.groupId} aria-label={`${item.title} ${group.land}`} className="glass-surface rounded-[1.35rem] px-4 py-4">
             <div className="flex items-center justify-between gap-3">
               <h4 className="text-[13px] font-black uppercase tracking-[0.18em] text-white">{group.land}</h4>
+              {onEditLand ? (
               <button
                 type="button"
                 onClick={() => onEditLand(day, item, group)}
@@ -2750,6 +2855,7 @@ function FlexibleTimelineItem({
               >
                 <LucideIcon name="pencil" size={20} />
               </button>
+              ) : null}
             </div>
             <ul className="mt-3 divide-y divide-[#2C2C2E]/70">
               {group.activities.map((activity) => {
@@ -2796,10 +2902,10 @@ function DayTimeline({
   day: TripDay;
   statuses: Record<string, ItemStatus>;
   landGroupOrders: Record<string, LandGroupOrder>;
-  onCycleStatus: (id: string) => void;
-  onEditItem: (dayId: string, item: TripItem) => void;
-  onAddItem: (dayId: string) => void;
-  onEditLand: (day: TripDay, item: TimelineActivityBlock, group: TimelineLandGroup) => void;
+  onCycleStatus?: (id: string) => void;
+  onEditItem?: (dayId: string, item: TripItem) => void;
+  onAddItem?: (dayId: string) => void;
+  onEditLand?: (day: TripDay, item: TimelineActivityBlock, group: TimelineLandGroup) => void;
   onBackToDashboard?: () => void;
 }) {
   const sectionRef = useRef<HTMLElement | null>(null);
@@ -2853,6 +2959,7 @@ function DayTimeline({
             >
               {day.label}
             </p>
+            {onAddItem ? (
             <button
               type="button"
               onClick={() => onAddItem(day.id)}
@@ -2866,6 +2973,7 @@ function DayTimeline({
             >
               <LucideIcon name="plus" size={20} />
             </button>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -2877,6 +2985,7 @@ function DayTimeline({
               {day.label}
             </h2>
           </div>
+          {onAddItem ? (
           <button
             type="button"
             onClick={() => onAddItem(day.id)}
@@ -2886,6 +2995,7 @@ function DayTimeline({
           >
             <LucideIcon name="plus" size={24} />
           </button>
+          ) : null}
         </div>
       </header>
       <div className="divide-y divide-[#2C2C2E]/70">
@@ -2907,7 +3017,7 @@ function DayTimeline({
               item={item}
               statuses={statuses}
               onCycleStatus={onCycleStatus}
-              onEdit={(selectedItem) => onEditItem(day.id, selectedItem)}
+              onEdit={onEditItem ? (selectedItem) => onEditItem(day.id, selectedItem) : undefined}
             />
           ),
         )}
@@ -2928,11 +3038,11 @@ function AllDaysScreen({
 }: {
   statuses: Record<string, ItemStatus>;
   landGroupOrders: Record<string, LandGroupOrder>;
-  onCycleStatus: (id: string) => void;
+  onCycleStatus?: (id: string) => void;
   days: TripDay[];
-  onEditItem: (dayId: string, item: TripItem) => void;
-  onAddItem: (dayId: string) => void;
-  onEditLand: (day: TripDay, item: TimelineActivityBlock, group: TimelineLandGroup) => void;
+  onEditItem?: (dayId: string, item: TripItem) => void;
+  onAddItem?: (dayId: string) => void;
+  onEditLand?: (day: TripDay, item: TimelineActivityBlock, group: TimelineLandGroup) => void;
   onBackToDashboard?: () => void;
 }) {
   return (
@@ -2964,9 +3074,9 @@ function ReservationsScreen({
 }: {
   reservations: ReturnType<typeof getReservations>;
   reservationDayCards: Record<string, ReservationDayCard>;
-  onEditItem: (dayId: string, item: TripItem) => void;
-  onOpenAddOptions: () => void;
-  onAddReservationForDay: (date: string) => void;
+  onEditItem?: (dayId: string, item: TripItem) => void;
+  onOpenAddOptions?: () => void;
+  onAddReservationForDay?: (date: string) => void;
   onBackToDashboard: () => void;
 }) {
   const reservationGroups = groupReservationsByDay(reservations, reservationDayCards);
@@ -3020,6 +3130,7 @@ function ReservationsScreen({
           >
             Reservations
           </p>
+          {onOpenAddOptions ? (
           <button
             type="button"
             onClick={onOpenAddOptions}
@@ -3033,6 +3144,7 @@ function ReservationsScreen({
           >
             <LucideIcon name="plus" size={20} />
           </button>
+          ) : null}
         </div>
       </div>
 
@@ -3041,6 +3153,7 @@ function ReservationsScreen({
           <h1 id="reservations-heading" className="text-[32px] font-black leading-[1.02] text-white sm:text-[38px]">
             Reservations
           </h1>
+          {onOpenAddOptions ? (
           <button
             type="button"
             onClick={onOpenAddOptions}
@@ -3050,6 +3163,7 @@ function ReservationsScreen({
           >
             <LucideIcon name="plus" size={24} />
           </button>
+          ) : null}
         </div>
       </header>
 
@@ -3075,6 +3189,7 @@ function ReservationsScreen({
                   <p className="rounded-full border border-white/[0.08] bg-[#111111]/70 px-3 py-1 text-[12px] font-black text-[#A1A1A6]">
                     {items.length} {items.length === 1 ? 'plan' : 'plans'}
                   </p>
+                  {onAddReservationForDay ? (
                   <button
                     type="button"
                     onClick={() => onAddReservationForDay(day.date)}
@@ -3084,6 +3199,7 @@ function ReservationsScreen({
                   >
                     <LucideIcon name="plus" size={20} />
                   </button>
+                  ) : null}
                 </div>
               </div>
               <div className="divide-y divide-[#2C2C2E]/70">
@@ -3100,7 +3216,7 @@ function ReservationsScreen({
                           {getItemConfirmationNumber(item) ? <p className="mt-2 text-sm text-[#A1A1A6]">Confirmation #{getItemConfirmationNumber(item)}</p> : null}
                           {item.notes ? <p className="mt-2 text-sm leading-6 text-[#A1A1A6]">{item.notes}</p> : null}
                         </div>
-                        <div className="flex shrink-0 gap-2">
+                        {onEditItem ? <div className="flex shrink-0 gap-2">
                           <button
                             type="button"
                             onClick={() => onEditItem(day.id, item)}
@@ -3110,7 +3226,7 @@ function ReservationsScreen({
                           >
                             <LucideIcon name="pencil" size={20} />
                           </button>
-                        </div>
+                        </div> : null}
                       </div>
                     </article>
                   );
@@ -3139,8 +3255,22 @@ export default function App() {
   const [landDelete, setLandDelete] = useState<LandDeleteState | null>(null);
   const [itemDelete, setItemDelete] = useState<ItemDeleteState | null>(null);
   const [fireworksRun, setFireworksRun] = useState(0);
+  const [isEditUnlocked, setIsEditUnlocked] = useState(() => {
+    try {
+      return window.localStorage.getItem(editUnlockStorageKey) === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [isWordmarkPressing, setIsWordmarkPressing] = useState(false);
+  const [unlockPrompt, setUnlockPrompt] = useState(false);
+  const [unlockKey, setUnlockKey] = useState('');
+  const [unlockError, setUnlockError] = useState('');
+  const [toastMessage, setToastMessage] = useState('');
   const wordmarkTapTimes = useRef<number[]>([]);
   const wordmarkTapReset = useRef<number | undefined>(undefined);
+  const wordmarkLongPressTimer = useRef<number | undefined>(undefined);
+  const suppressNextWordmarkClick = useRef(false);
   const tripStorage = useTripStorage();
 
   useEffect(() => {
@@ -3166,8 +3296,15 @@ export default function App() {
   useEffect(() => {
     return () => {
       if (wordmarkTapReset.current) window.clearTimeout(wordmarkTapReset.current);
+      if (wordmarkLongPressTimer.current) window.clearTimeout(wordmarkLongPressTimer.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (!toastMessage) return undefined;
+    const timeout = window.setTimeout(() => setToastMessage(''), 2_500);
+    return () => window.clearTimeout(timeout);
+  }, [toastMessage]);
 
   const tripDays = useMemo(
     () =>
@@ -3220,7 +3357,34 @@ export default function App() {
     updateRouteHash(tab);
   }
 
+  function cancelWordmarkLongPress() {
+    if (wordmarkLongPressTimer.current) {
+      window.clearTimeout(wordmarkLongPressTimer.current);
+      wordmarkLongPressTimer.current = undefined;
+    }
+    setIsWordmarkPressing(false);
+  }
+
+  function startWordmarkLongPress() {
+    if (isEditUnlocked) return;
+    cancelWordmarkLongPress();
+    setIsWordmarkPressing(true);
+    wordmarkLongPressTimer.current = window.setTimeout(() => {
+      wordmarkLongPressTimer.current = undefined;
+      suppressNextWordmarkClick.current = true;
+      setIsWordmarkPressing(false);
+      setUnlockPrompt(true);
+      setUnlockKey('');
+      setUnlockError('');
+    }, 700);
+  }
+
   function handleWordmarkTap() {
+    if (suppressNextWordmarkClick.current) {
+      suppressNextWordmarkClick.current = false;
+      return;
+    }
+
     if (fireworksRun > 0) return;
 
     const timestamp = Date.now();
@@ -3241,6 +3405,25 @@ export default function App() {
     wordmarkTapReset.current = window.setTimeout(() => {
       wordmarkTapTimes.current = [];
     }, 1_500);
+  }
+
+  function submitUnlockKey() {
+    const expectedKey = import.meta.env.VITE_EDIT_KEY?.trim();
+    if (!expectedKey || unlockKey.trim() !== expectedKey) {
+      setUnlockError('That key didn’t work.');
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(editUnlockStorageKey, 'true');
+    } catch {
+      // Editing still unlocks for this session if localStorage is unavailable.
+    }
+    setIsEditUnlocked(true);
+    setUnlockPrompt(false);
+    setUnlockKey('');
+    setUnlockError('');
+    setToastMessage('✨ Edit mode unlocked');
   }
 
   function openEditItem(dayId: string, item: TripItem) {
@@ -3727,8 +3910,8 @@ export default function App() {
           <TodayScreen
             {...activeState}
             statuses={tripStorage.statuses}
-            onCycleStatus={tripStorage.cycleStatus}
-            onEditItem={openEditItem}
+            onCycleStatus={isEditUnlocked ? tripStorage.cycleStatus : undefined}
+            onEditItem={isEditUnlocked ? openEditItem : undefined}
             onViewFullDay={() => openDashboardDay(activeState.day.id)}
             attentionItems={attentionItems}
             phase={phase}
@@ -3737,6 +3920,14 @@ export default function App() {
             onOpenDay={openDashboardDay}
             onOpenReservations={() => openDashboardTab('reservations')}
             onWordmarkTap={handleWordmarkTap}
+            wordmarkPressHandlers={{
+              onPointerDown: startWordmarkLongPress,
+              onPointerUp: cancelWordmarkLongPress,
+              onPointerCancel: cancelWordmarkLongPress,
+              onPointerLeave: cancelWordmarkLongPress,
+            }}
+            isWordmarkPressing={isWordmarkPressing}
+            canEdit={isEditUnlocked}
           />
         ) : null}
         {activeTab === 'days' ? (
@@ -3744,21 +3935,21 @@ export default function App() {
             days={timelineDays}
             statuses={tripStorage.statuses}
             landGroupOrders={tripStorage.landGroupOrders}
-            onCycleStatus={tripStorage.cycleStatus}
-            onEditItem={openEditItem}
-            onAddItem={openAddItem}
-            onEditLand={openLandEditor}
+            onCycleStatus={isEditUnlocked ? tripStorage.cycleStatus : undefined}
+            onEditItem={isEditUnlocked ? openEditItem : undefined}
+            onAddItem={isEditUnlocked ? openAddItem : undefined}
+            onEditLand={isEditUnlocked ? openLandEditor : undefined}
             onBackToDashboard={selectedTimelineDay ? openDashboard : undefined}
           />
         ) : null}
-        {activeTab === 'attention' ? <AttentionScreen statuses={tripStorage.statuses} attentionItems={attentionItems} onEditItem={openEditItem} /> : null}
+        {activeTab === 'attention' ? <AttentionScreen statuses={tripStorage.statuses} attentionItems={attentionItems} onEditItem={isEditUnlocked ? openEditItem : undefined} /> : null}
         {activeTab === 'reservations' ? (
           <ReservationsScreen
             reservations={reservations}
             reservationDayCards={tripStorage.reservationDayCards}
-            onEditItem={openEditItem}
-            onOpenAddOptions={() => openReservationAddOptions()}
-            onAddReservationForDay={openAddReservation}
+            onEditItem={isEditUnlocked ? openEditItem : undefined}
+            onOpenAddOptions={isEditUnlocked ? () => openReservationAddOptions() : undefined}
+            onAddReservationForDay={isEditUnlocked ? openAddReservation : undefined}
             onBackToDashboard={openDashboard}
           />
         ) : null}
@@ -3823,6 +4014,23 @@ export default function App() {
           onDelete={confirmItemDelete}
         />
       ) : null}
+      {unlockPrompt ? (
+        <UnlockEditSheet
+          value={unlockKey}
+          error={unlockError}
+          onChange={(value) => {
+            setUnlockKey(value);
+            setUnlockError('');
+          }}
+          onUnlock={submitUnlockKey}
+          onCancel={() => {
+            setUnlockPrompt(false);
+            setUnlockKey('');
+            setUnlockError('');
+          }}
+        />
+      ) : null}
+      {toastMessage ? <Toast message={toastMessage} /> : null}
     </div>
   );
 }
