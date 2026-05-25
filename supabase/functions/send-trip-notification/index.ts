@@ -85,15 +85,15 @@ function getPretripMessages(kind: NotificationKind, daysToGo: number): Notificat
       },
       {
         title: "Chosen ones need sleep",
-        body: `Even the chosen ones need sleep. ${days} until mayhem.`,
+        body: `Even chosen ones need sleep. ${days} until mayhem.`,
       },
       {
         title: "Close your eyes",
-        body: `Tomorrow gets you closer. The force can wait.`,
+        body: `Close your eyes. Tomorrow gets you closer.`,
       },
       {
         title: "Never grow up",
-        body: "Sleep now. Never grow up… but definitely rest.",
+        body: "Sleep now. The adventure gets closer in the morning.",
       },
     ];
   }
@@ -101,11 +101,11 @@ function getPretripMessages(kind: NotificationKind, daysToGo: number): Notificat
   return [
     {
       title: "Adventure is out there",
-      body: `And it’s getting closer. ${days} to go.`,
+      body: `Adventure is out there… and it’s getting closer. ${days} to go.`,
     },
     {
       title: "You’ve got a friend",
-      body: `And a trip to plan. ${days} to Disney Mayhem.`,
+      body: `You’ve got a friend in the plan. ${days} to Disney Mayhem.`,
     },
     {
       title: "The magic is calling",
@@ -117,7 +117,7 @@ function getPretripMessages(kind: NotificationKind, daysToGo: number): Notificat
     },
     {
       title: "To infinity",
-      body: `The countdown is real now. ${days} to Disney.`,
+      body: `To infinity… and Disney. ${days} to go.`,
     },
     {
       title: "Something incredible",
@@ -125,7 +125,7 @@ function getPretripMessages(kind: NotificationKind, daysToGo: number): Notificat
     },
     {
       title: "Almost there",
-      body: `Just keep swimming. ${days} to go.`,
+      body: `You’re almost there. Just keep swimming for ${days}.`,
     },
   ];
 }
@@ -135,11 +135,11 @@ function getDepartureDayMessages(kind: NotificationKind): NotificationMessage[] 
     return [
       {
         title: "First spell cast",
-        body: "This was only the beginning. Dream big tonight.",
+        body: "The first spell is cast. Dream big tonight.",
       },
       {
         title: "Travel / EPCOT wrapped",
-        body: "Adventure checked off. One bite at a time.",
+        body: "Travel day is in the books. Rest up for the next chapter.",
       },
     ];
   }
@@ -147,7 +147,7 @@ function getDepartureDayMessages(kind: NotificationKind): NotificationMessage[] 
   return [
     {
       title: "✨ The journey begins",
-      body: "This is the start of something magical. Punch it.",
+      body: "✨ The journey begins. Punch it.",
     },
   ];
 }
@@ -203,7 +203,7 @@ function getTripMorningMessages(dayTitle: string): NotificationMessage[] {
       },
       {
         title: "The force is with you",
-        body: "Always. Especially near the snacks.",
+        body: "The force is with you today. Especially near the snacks.",
       },
       {
         title: "Part of the story",
@@ -211,7 +211,7 @@ function getTripMorningMessages(dayTitle: string): NotificationMessage[] {
       },
       {
         title: "To infinity",
-        body: "And beyond. Hollywood Studios is ready.",
+        body: "To infinity and beyond. Hollywood Studios is ready.",
       },
     ];
   }
@@ -220,7 +220,7 @@ function getTripMorningMessages(dayTitle: string): NotificationMessage[] {
     return [
       {
         title: "Hakuna Matata mode",
-        body: "No worries… for today.",
+        body: "Hakuna Matata mode is fully approved today.",
       },
       {
         title: "Take it slow",
@@ -237,7 +237,7 @@ function getTripMorningMessages(dayTitle: string): NotificationMessage[] {
     return [
       {
         title: "So long, partner",
-        body: "Travel home day. Pack the memories gently.",
+        body: "So long, partner. Pack the memories gently.",
       },
       {
         title: "Not the end",
@@ -263,7 +263,7 @@ function getTripNightMessages(dayTitle: string): NotificationMessage[] {
     return [
       {
         title: "Happily for today",
-        body: "And they lived happily ever after… for today.",
+        body: "Happily ever after counts for today.",
       },
       {
         title: "Fireworks feeling",
@@ -271,7 +271,7 @@ function getTripNightMessages(dayTitle: string): NotificationMessage[] {
       },
       {
         title: "Never grow up",
-        body: "Not after today.",
+        body: "Hold onto today. It earned a little wonder.",
       },
     ];
   }
@@ -403,12 +403,11 @@ function getNotificationPayloadMessage(
 ): NotificationMessage {
   if (kind === "test") return message;
 
-  const title = message.title.trim();
   const body = message.body.trim();
 
   return {
-    title: "",
-    body: title ? `${title}. ${body}` : body,
+    title: kind === "morning" ? "Good Morning!" : "Good Night!",
+    body,
   };
 }
 
@@ -507,7 +506,7 @@ serve(async (req) => {
     }
 
     const subscriptions = (data ?? []) as PushSubscriptionRow[];
-    const payloadTitle = kind === "test" ? message.title : "\u2063";
+    const payloadTitle = message.title;
     const payloadBody = message.body;
 
     const payload = JSON.stringify({
