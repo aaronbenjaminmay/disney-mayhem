@@ -1,8 +1,9 @@
-import type { Activity, LandBlock, LandBlockActivity, LandGroupOrder, ParkName, ScheduledItem, TripDay, TripItem } from '../types';
+import type { Activity, LandBlock, LandBlockActivity, LandGroupCard, LandGroupOrder, ParkName, ScheduledItem, TripDay, TripItem } from '../types';
 
 type ActivityBlock = TripItem & {
   activities: Activity[];
   area?: string;
+  landGroupId?: string;
 };
 
 function includesAny(text: string, values: string[]) {
@@ -149,7 +150,11 @@ function hasActivityBlock(item: TripItem): item is ActivityBlock {
   return 'activities' in item && Array.isArray(item.activities);
 }
 
-export function buildLandBlocks(day: TripDay, items: TripItem[] = day.items, landGroupOrders: Record<string, LandGroupOrder> = {}): LandBlock[] {
+function getEmptyLandCardGroupId(dayId: string, block: ActivityBlock): string {
+  return block.landGroupId || getLandGroupId(dayId, block.id, block.area || block.location);
+}
+
+export function buildLandBlocks(day: TripDay, items: TripItem[] = day.items, landGroupOrders: Record<string, LandGroupOrder> = {}, landGroupCards: Record<string, LandGroupCard> = {}): LandBlock[] {
   const blocks = new Map<string, LandBlock>();
 
   items
@@ -157,7 +162,7 @@ export function buildLandBlocks(day: TripDay, items: TripItem[] = day.items, lan
     .forEach((block) => {
       if (block.activities.length === 0) {
         const land = block.area || block.location;
-        const groupId = getLandGroupId(day.id, block.id, land);
+        const groupId = getEmptyLandCardGroupId(day.id, block);
         if (!blocks.has(groupId)) {
           blocks.set(groupId, {
             id: groupId,
@@ -199,13 +204,29 @@ export function buildLandBlocks(day: TripDay, items: TripItem[] = day.items, lan
       });
     });
 
+  Object.values(landGroupCards)
+    .filter((card) => card.dayId === day.id)
+    .forEach((card) => {
+      const existing = blocks.get(card.groupId);
+      blocks.set(card.groupId, {
+        id: card.groupId,
+        land: card.land,
+        activities: existing?.activities ?? [],
+        sourceItemIds: existing?.sourceItemIds?.length ? existing.sourceItemIds : [card.parentItemId],
+        time: existing?.time ?? card.time,
+        endTime: existing?.endTime ?? card.endTime,
+        notes: card.notes ?? existing?.notes,
+        needsAttention: existing?.needsAttention,
+      });
+    });
+
   return sortLandBlocks([...blocks.values()], landGroupOrders);
 }
 
-export function withTripDayGroups(day: TripDay, landGroupOrders: Record<string, LandGroupOrder> = {}): TripDay {
+export function withTripDayGroups(day: TripDay, landGroupOrders: Record<string, LandGroupOrder> = {}, landGroupCards: Record<string, LandGroupCard> = {}): TripDay {
   return {
     ...day,
     scheduledItems: day.items.filter((item): item is ScheduledItem => item.type === 'scheduled'),
-    landBlocks: buildLandBlocks(day, day.items, landGroupOrders),
+    landBlocks: buildLandBlocks(day, day.items, landGroupOrders, landGroupCards),
   };
 }

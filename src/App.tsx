@@ -45,6 +45,7 @@ import {
 type TimelineActivityBlock = TripItem & {
   activities: Activity[];
   area?: string;
+  landGroupId?: string;
 };
 
 const warnedUnknownStatusIds = new Set<string>();
@@ -88,7 +89,7 @@ function shouldShowSecondaryText(primary?: string, secondary?: string): boolean 
 }
 
 function hasTimelineActivityBlock(item: TripItem): item is TimelineActivityBlock {
-  return 'activities' in item && Array.isArray(item.activities) && item.activities.length > 0;
+  return 'activities' in item && Array.isArray(item.activities);
 }
 
 function getKnownStatusIds(days: TripDay[]): Set<string> {
@@ -306,7 +307,7 @@ function groupActivitiesByLand(day: TripDay, item: TimelineActivityBlock, landGr
 
   if (groups.length === 0) {
     const land = item.area || item.location;
-    groups.push({ groupId: getLandGroupId(day.id, item.id, land), land, activities: [] });
+    groups.push({ groupId: item.landGroupId || getLandGroupId(day.id, item.id, land), land, activities: [] });
   }
 
   return sortTimelineLandGroups(groups, landGroupOrders);
@@ -3119,10 +3120,12 @@ export default function App() {
         tripStorage.activityEdits,
         tripStorage.addedActivities,
         tripStorage.deletedActivityIds,
+        tripStorage.deletedActivityGroups,
         tripStorage.deletedLandGroupIds,
         tripStorage.landGroupOrders,
+        tripStorage.landGroupCards,
       ),
-    [tripStorage.activityEdits, tripStorage.addedActivities, tripStorage.addedItems, tripStorage.deletedActivityIds, tripStorage.deletedItemIds, tripStorage.deletedLandGroupIds, tripStorage.itemEdits, tripStorage.landGroupOrders],
+    [tripStorage.activityEdits, tripStorage.addedActivities, tripStorage.addedItems, tripStorage.deletedActivityGroups, tripStorage.deletedActivityIds, tripStorage.deletedItemIds, tripStorage.deletedLandGroupIds, tripStorage.itemEdits, tripStorage.landGroupCards, tripStorage.landGroupOrders],
   );
   const reservations = useMemo(() => getReservations(tripDays), [tripDays]);
   const attentionItems = useMemo(() => getAttentionItems(tripDays), [tripDays]);
@@ -3287,6 +3290,8 @@ export default function App() {
     const parentItem: TimelineActivityBlock = {
       id: blockId,
       type: 'flexible',
+      kind: 'land-card',
+      landGroupId: groupId,
       title: '',
       area: '',
       location: '',
@@ -3615,6 +3620,8 @@ export default function App() {
       const item: TripItem = {
         id: landEditor.parentItem.id,
         type: 'flexible',
+        kind: 'land-card',
+        landGroupId: landEditor.groupId,
         time: landEditor.time || undefined,
         endTime: landEditor.endTime || undefined,
         title: `${land} activities`,
@@ -3626,6 +3633,16 @@ export default function App() {
       };
 
       tripStorage.addItem(landEditor.dayId, item);
+      tripStorage.saveLandGroupCard({
+        id: landEditor.groupId,
+        groupId: landEditor.groupId,
+        dayId: landEditor.dayId,
+        parentItemId: landEditor.parentItem.id,
+        land,
+        notes: landEditor.notes.trim() || undefined,
+        time: landEditor.time || undefined,
+        endTime: landEditor.endTime || undefined,
+      });
       setLandEditor(null);
       return;
     }
@@ -3676,10 +3693,22 @@ export default function App() {
         ...toEditableFields(landEditor.parentItem, landEditor.dayId),
         title: `${land} activities`,
         location: land,
+        area: land,
         notes: landEditor.notes.trim(),
         type: landEditor.parentItem.type,
       });
     }
+
+    tripStorage.saveLandGroupCard({
+      id: landEditor.groupId,
+      groupId: landEditor.groupId,
+      dayId: landEditor.dayId,
+      parentItemId: landEditor.parentItem.id,
+      land,
+      notes: landEditor.notes.trim() || undefined,
+      time: landEditor.parentItem.time,
+      endTime: landEditor.parentItem.endTime,
+    });
 
     setLandEditor(null);
   }

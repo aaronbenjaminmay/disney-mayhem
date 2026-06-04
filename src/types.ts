@@ -45,6 +45,8 @@ export type Activity = {
 export type ScheduledItem = {
   id: string;
   type: 'scheduled';
+  kind?: 'land-card';
+  landGroupId?: string;
   time?: string;
   endTime?: string;
   title: string;
@@ -78,6 +80,8 @@ export type ReservationItem = {
 export type FlexibleBlock = {
   id: string;
   type: 'flexible';
+  kind?: 'land-card';
+  landGroupId?: string;
   time?: string;
   endTime?: string;
   title: string;
@@ -117,6 +121,17 @@ export type LandGroupOrder = {
   displayOrder: number;
 };
 
+export type LandGroupCard = {
+  id: string;
+  groupId: string;
+  dayId: string;
+  parentItemId: string;
+  land: string;
+  notes?: string;
+  time?: string;
+  endTime?: string;
+};
+
 export type ReservationDayCard = {
   id: string;
   date: string;
@@ -144,8 +159,10 @@ export type PersistedState = {
   activityEdits: Record<string, EditableActivityFields>;
   addedActivities: Record<string, Activity[]>;
   deletedActivityIds: string[];
+  deletedActivityGroups: Record<string, string>;
   deletedLandGroupIds: string[];
   landGroupOrders: Record<string, LandGroupOrder>;
+  landGroupCards: Record<string, LandGroupCard>;
   reservationDayCards: Record<string, ReservationDayCard>;
 };
 

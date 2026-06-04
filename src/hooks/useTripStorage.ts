@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { Activity, EditableActivityFields, EditableItemFields, ItemStatus, LandGroupOrder, PersistedState, ReservationDayCard, TripItem } from '../types';
+import type { Activity, EditableActivityFields, EditableItemFields, ItemStatus, LandGroupCard, LandGroupOrder, PersistedState, ReservationDayCard, TripItem } from '../types';
 import {
   fetchSupabaseStatusEdits,
   saveSupabaseActivityAdd,
   saveSupabaseActivityDelete,
   saveSupabaseActivityEdit,
   saveSupabaseLandGroupDelete,
+  saveSupabaseLandGroupCard,
   saveSupabaseLandGroupOrder,
   saveSupabaseItemAdd,
   saveSupabaseItemDelete,
@@ -24,8 +25,10 @@ const defaultState: PersistedState = {
   activityEdits: {},
   addedActivities: {},
   deletedActivityIds: [],
+  deletedActivityGroups: {},
   deletedLandGroupIds: [],
   landGroupOrders: {},
+  landGroupCards: {},
   reservationDayCards: {},
 };
 
@@ -43,8 +46,10 @@ function loadState(): PersistedState {
       activityEdits: parsed.activityEdits ?? {},
       addedActivities: parsed.addedActivities ?? {},
       deletedActivityIds: parsed.deletedActivityIds ?? [],
+      deletedActivityGroups: parsed.deletedActivityGroups ?? {},
       deletedLandGroupIds: parsed.deletedLandGroupIds ?? [],
       landGroupOrders: parsed.landGroupOrders ?? {},
+      landGroupCards: parsed.landGroupCards ?? {},
       reservationDayCards: parsed.reservationDayCards ?? {},
     };
   } catch {
@@ -104,8 +109,10 @@ export function useTripStorage() {
         const nextActivityEdits = preferSupabaseSnapshot ? edits.activityEdits : { ...current.activityEdits, ...edits.activityEdits };
         const nextAddedActivities = preferSupabaseSnapshot ? edits.addedActivities : mergeAddedActivities(current.addedActivities, edits.addedActivities);
         const nextDeletedActivityIds = preferSupabaseSnapshot ? edits.deletedActivityIds : [...new Set([...current.deletedActivityIds, ...edits.deletedActivityIds])];
+        const nextDeletedActivityGroups = preferSupabaseSnapshot ? edits.deletedActivityGroups : { ...current.deletedActivityGroups, ...edits.deletedActivityGroups };
         const nextDeletedLandGroupIds = preferSupabaseSnapshot ? edits.deletedLandGroupIds : [...new Set([...current.deletedLandGroupIds, ...edits.deletedLandGroupIds])];
         const nextLandGroupOrders = preferSupabaseSnapshot ? edits.landGroupOrders : { ...current.landGroupOrders, ...edits.landGroupOrders };
+        const nextLandGroupCards = preferSupabaseSnapshot ? edits.landGroupCards : { ...current.landGroupCards, ...edits.landGroupCards };
         const nextItemEdits = preferSupabaseSnapshot ? edits.itemEdits : { ...current.itemEdits, ...edits.itemEdits };
         const nextAddedItems = preferSupabaseSnapshot ? edits.addedItems : mergeAddedItems(current.addedItems, edits.addedItems);
         const nextDeletedItemIds = preferSupabaseSnapshot ? edits.deletedItemIds : [...new Set([...current.deletedItemIds, ...edits.deletedItemIds])];
@@ -118,8 +125,10 @@ export function useTripStorage() {
           JSON.stringify(current.activityEdits) === JSON.stringify(nextActivityEdits) &&
           JSON.stringify(current.addedActivities) === JSON.stringify(nextAddedActivities) &&
           JSON.stringify(current.deletedActivityIds) === JSON.stringify(nextDeletedActivityIds) &&
+          JSON.stringify(current.deletedActivityGroups) === JSON.stringify(nextDeletedActivityGroups) &&
           JSON.stringify(current.deletedLandGroupIds) === JSON.stringify(nextDeletedLandGroupIds) &&
           JSON.stringify(current.landGroupOrders) === JSON.stringify(nextLandGroupOrders) &&
+          JSON.stringify(current.landGroupCards) === JSON.stringify(nextLandGroupCards) &&
           JSON.stringify(current.reservationDayCards) === JSON.stringify(nextReservationDayCards)
         ) {
           return current;
@@ -134,8 +143,10 @@ export function useTripStorage() {
           activityEdits: nextActivityEdits,
           addedActivities: nextAddedActivities,
           deletedActivityIds: nextDeletedActivityIds,
+          deletedActivityGroups: nextDeletedActivityGroups,
           deletedLandGroupIds: nextDeletedLandGroupIds,
           landGroupOrders: nextLandGroupOrders,
+          landGroupCards: nextLandGroupCards,
           reservationDayCards: nextReservationDayCards,
         };
       });
@@ -184,8 +195,10 @@ export function useTripStorage() {
       activityEdits: state.activityEdits,
       addedActivities: state.addedActivities,
       deletedActivityIds: state.deletedActivityIds,
+      deletedActivityGroups: state.deletedActivityGroups,
       deletedLandGroupIds: state.deletedLandGroupIds,
       landGroupOrders: state.landGroupOrders,
+      landGroupCards: state.landGroupCards,
       reservationDayCards: state.reservationDayCards,
       setStatus(id: string, status: ItemStatus) {
         setState((current) => ({
@@ -272,6 +285,12 @@ export function useTripStorage() {
         setState((current) => ({
           ...current,
           deletedActivityIds: current.deletedActivityIds.includes(activityId) ? current.deletedActivityIds : [...current.deletedActivityIds, activityId],
+          deletedActivityGroups: groupId
+            ? {
+                ...current.deletedActivityGroups,
+                [activityId]: groupId,
+              }
+            : current.deletedActivityGroups,
         }));
         void saveSupabaseActivityDelete(activityId, parentItemId, dayId, groupId);
       },
@@ -280,6 +299,10 @@ export function useTripStorage() {
           ...current,
           deletedLandGroupIds: current.deletedLandGroupIds.includes(groupId) ? current.deletedLandGroupIds : [...current.deletedLandGroupIds, groupId],
           deletedActivityIds: [...new Set([...current.deletedActivityIds, ...activityIds])],
+          deletedActivityGroups: {
+            ...current.deletedActivityGroups,
+            ...Object.fromEntries(activityIds.map((activityId) => [activityId, groupId])),
+          },
         }));
         void saveSupabaseLandGroupDelete(groupId, parentItemId, dayId, activityIds);
       },
@@ -292,6 +315,16 @@ export function useTripStorage() {
           },
         }));
         void saveSupabaseLandGroupOrder(groupId, order);
+      },
+      saveLandGroupCard(card: LandGroupCard) {
+        setState((current) => ({
+          ...current,
+          landGroupCards: {
+            ...current.landGroupCards,
+            [card.groupId]: card,
+          },
+        }));
+        void saveSupabaseLandGroupCard(card);
       },
       saveReservationDayCard(card: ReservationDayCard) {
         setState((current) => ({

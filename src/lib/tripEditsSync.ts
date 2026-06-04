@@ -1,4 +1,4 @@
-import type { Activity, EditableActivityFields, EditableItemFields, ItemStatus, LandGroupOrder, ReservationDayCard, TripItem } from '../types';
+import type { Activity, EditableActivityFields, EditableItemFields, ItemStatus, LandGroupCard, LandGroupOrder, ReservationDayCard, TripItem } from '../types';
 import { createItemFromFields } from '../utils/itineraryEdits';
 import { supabase, tripId } from './supabaseClient';
 
@@ -12,7 +12,7 @@ type TripEditRow = {
   updated_at?: string | null;
   payload?: {
     status?: ItemStatus;
-    action?: 'edit' | 'add' | 'delete' | 'delete-land-group' | 'order-land-group' | 'save-reservation-day-card';
+    action?: 'edit' | 'add' | 'delete' | 'delete-land-group' | 'order-land-group' | 'save-land-group-card' | 'save-reservation-day-card';
     groupId?: string;
     landGroupId?: string;
     parentItemId?: string;
@@ -24,6 +24,7 @@ type TripEditRow = {
     activityId?: string;
     activityIds?: string[];
     landGroupOrder?: LandGroupOrder;
+    landGroupCard?: LandGroupCard;
     reservationDayCard?: ReservationDayCard;
     saved_at?: string;
   } | null;
@@ -34,8 +35,10 @@ export type SupabaseStatusEdits = {
   activityEdits: Record<string, EditableActivityFields>;
   addedActivities: Record<string, Activity[]>;
   deletedActivityIds: string[];
+  deletedActivityGroups: Record<string, string>;
   deletedLandGroupIds: string[];
   landGroupOrders: Record<string, LandGroupOrder>;
+  landGroupCards: Record<string, LandGroupCard>;
   itemEdits: Record<string, EditableItemFields>;
   addedItems: Record<string, TripItem[]>;
   deletedItemIds: string[];
@@ -86,8 +89,10 @@ export async function fetchSupabaseStatusEdits(sinceUpdatedAt?: string | null): 
   const activityEdits: Record<string, EditableActivityFields> = {};
   const addedActivities: Record<string, Activity[]> = {};
   const deletedActivityIds: string[] = [];
+  const deletedActivityGroups: Record<string, string> = {};
   const deletedLandGroupIds: string[] = [];
   const landGroupOrders: Record<string, LandGroupOrder> = {};
+  const landGroupCards: Record<string, LandGroupCard> = {};
   const itemEdits: Record<string, EditableItemFields> = {};
   const addedItems: Record<string, TripItem[]> = {};
   const deletedItemIds: string[] = [];
@@ -148,15 +153,22 @@ export async function fetchSupabaseStatusEdits(sinceUpdatedAt?: string | null): 
     }
     if (row.type === activityEditType && row.item_id && row.payload?.action === 'delete') {
       deletedActivityIds.push(row.item_id);
+      if (row.payload.landGroupId || row.payload.groupId) deletedActivityGroups[row.item_id] = row.payload.landGroupId ?? row.payload.groupId ?? '';
     }
     if (row.type === activityEditType && row.payload?.action === 'delete-land-group' && (row.payload.landGroupId || row.payload.groupId || row.item_id)) {
       const groupId = row.payload.landGroupId ?? row.payload.groupId ?? row.item_id;
       if (groupId) deletedLandGroupIds.push(groupId);
-      row.payload.activityIds?.forEach((activityId) => deletedActivityIds.push(activityId));
+      row.payload.activityIds?.forEach((activityId) => {
+        deletedActivityIds.push(activityId);
+        if (groupId) deletedActivityGroups[activityId] = groupId;
+      });
     }
     if (row.type === activityEditType && row.payload?.action === 'order-land-group' && (row.payload.landGroupId || row.payload.groupId || row.item_id) && row.payload.landGroupOrder) {
       const groupId = row.payload.landGroupId ?? row.payload.groupId ?? row.item_id;
       if (groupId) landGroupOrders[groupId] = row.payload.landGroupOrder;
+    }
+    if (row.type === activityEditType && row.payload?.action === 'save-land-group-card' && row.payload.landGroupCard) {
+      landGroupCards[row.payload.landGroupCard.groupId] = row.payload.landGroupCard;
     }
     if (row.type === itemEditType && row.item_id && row.payload?.action === 'edit' && row.payload.itemFields) {
       itemEdits[row.item_id] = row.payload.itemFields;
@@ -194,8 +206,10 @@ export async function fetchSupabaseStatusEdits(sinceUpdatedAt?: string | null): 
     activityEdits,
     addedActivities,
     deletedActivityIds,
+    deletedActivityGroups,
     deletedLandGroupIds,
     landGroupOrders,
+    landGroupCards,
     itemEdits,
     addedItems,
     deletedItemIds,
@@ -359,6 +373,17 @@ export async function saveSupabaseLandGroupOrder(groupId: string, order: LandGro
     parentItemId: order.parentItemId,
     dayId: order.dayId,
     landGroupOrder: order,
+  });
+}
+
+export async function saveSupabaseLandGroupCard(card: LandGroupCard): Promise<void> {
+  await saveSupabaseActivityRow(card.groupId, {
+    action: 'save-land-group-card',
+    groupId: card.groupId,
+    landGroupId: card.groupId,
+    parentItemId: card.parentItemId,
+    dayId: card.dayId,
+    landGroupCard: card,
   });
 }
 
