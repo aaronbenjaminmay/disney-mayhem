@@ -4,7 +4,7 @@ import { ItemCard } from './components/ItemCard';
 import { LucideIcon, type LucideIconName } from './components/LucideIcon';
 import { ScreenHeader } from './components/ScreenHeader';
 import { StatusButton } from './components/StatusButton';
-import { AppTab, Tabs } from './components/Tabs';
+import { type AppTab } from './components/Tabs';
 import { tripDays as baseTripDays, tripEndDate, tripStartDate } from './data/tripData';
 import { useTripStorage } from './hooks/useTripStorage';
 import {
@@ -1324,16 +1324,7 @@ function Toast({ message }: { message: string }) {
 
 function TodayScreen({
   day,
-  activeItem,
-  nextItem,
-  nextActivity,
-  upcomingItems,
-  isToday,
   statuses,
-  onCycleStatus,
-  onEditItem,
-  onViewFullDay,
-  attentionItems,
   phase,
   countdown,
   days,
@@ -1342,7 +1333,6 @@ function TodayScreen({
   onWordmarkTap,
   wordmarkPressHandlers,
   isWordmarkPressing,
-  canEdit,
 }: ReturnType<typeof getActiveScheduleState> & {
   statuses: Record<string, ItemStatus>;
   onCycleStatus?: (id: string) => void;
@@ -1364,277 +1354,90 @@ function TodayScreen({
   isWordmarkPressing: boolean;
   canEdit: boolean;
 }) {
-  if (phase === 'before') {
-    const countdownUnits = [
-      { label: 'Days', value: countdown.days },
-      { label: 'Hours', value: countdown.hours },
-      { label: 'Minutes', value: countdown.minutes },
-      { label: 'Seconds', value: countdown.seconds },
-    ];
-
-    return (
-      <main className="screen-fade px-4 pb-8 pt-8 sm:pt-12">
-        <section aria-labelledby="countdown-heading" className="section-rise text-center">
-          <h1 id="countdown-heading" className="sr-only">Disney Mayhem</h1>
-          <button
-            type="button"
-            onClick={onWordmarkTap}
-            {...wordmarkPressHandlers}
-            className={`mx-auto block rounded-2xl transition duration-200 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-4 focus-visible:outline-[#0A84FF] ${
-              isWordmarkPressing ? 'scale-[0.97] drop-shadow-[0_0_20px_rgba(10,132,255,0.45)]' : ''
-            }`}
-            aria-label="Disney Mayhem"
-          >
-            <img
-              src={`${import.meta.env.BASE_URL}DisneyMayhem-WM.svg`}
-              alt="Disney Mayhem"
-              className="h-auto w-[min(78vw,280px)] sm:w-[320px]"
-            />
-          </button>
-          <p className="mt-5 text-[13px] font-black uppercase tracking-[0.18em] text-white">Disney Mayhem begins in...</p>
-          <div className="glass-surface mx-auto mt-7 max-w-3xl rounded-[1.75rem] px-5 py-7 sm:px-8 sm:py-9">
-            <div className="flex flex-wrap justify-center gap-x-6 gap-y-7" aria-live="polite" aria-label="Live countdown to departure">
-              {countdownUnits.map((unit) => (
-                <div key={unit.label} className="basis-[calc(50%-0.75rem)] sm:basis-auto">
-                  <div className="tabular-nums font-black leading-none text-[#0A84FF] [font-size:clamp(2.8rem,12vw,5.5rem)]">
-                    {String(unit.value).padStart(2, '0')}
-                  </div>
-                  <div className="mt-3 text-[12px] font-black uppercase tracking-[0.16em] text-[#A1A1A6]">{unit.label}</div>
-                </div>
-              ))}
-            </div>
-            {nextItem ? (
-              <p className="mt-8 text-[15px] font-semibold text-[#A1A1A6]">
-                First up: {formatTimeRange(nextItem)} · {nextItem.title}
-              </p>
-            ) : null}
-          </div>
-        </section>
-
-        <section aria-labelledby="dashboard-heading" className="section-rise mt-10">
-          <h2 id="dashboard-heading" className="text-[13px] font-black uppercase tracking-[0.18em] text-[#A1A1A6]">
-            Trip Dashboard
-          </h2>
-          <div className="mt-4">
-            <TodayIntelCard day={day} statuses={statuses} phase={phase} countdown={countdown} />
-          </div>
-          <div className="mt-4 grid grid-cols-1 gap-3 min-[390px]:grid-cols-2">
-            {days.map((tripDay) => {
-              const presentation = getDayPresentation(tripDay);
-              return (
-                <DashboardTile
-                  key={tripDay.id}
-                  title={formatDashboardDateLabel(tripDay.date)}
-                  subtitle={tripDay.label}
-                  icon={presentation.icon}
-                  onClick={() => onOpenDay(tripDay.id)}
-                />
-              );
-            })}
-            <DashboardTile
-              title="Reservations"
-              subtitle="Dining and fixed plans"
-              icon="utensils"
-              onClick={onOpenReservations}
-            />
-          </div>
-          <section aria-labelledby="app-settings-heading" className="mt-8">
-            <h3 id="app-settings-heading" className="text-[12px] font-black uppercase tracking-[0.18em] text-[#A1A1A6]">
-              App Settings
-            </h3>
-            <div className="mt-3">
-              <NotificationSettingsControl />
-            </div>
-          </section>
-        </section>
-      </main>
-    );
-  }
-
-  if (phase === 'after') {
-    return (
-      <>
-        <ScreenHeader eyebrow="Trip complete" title="Disney Mayhem">
-          <p>
-            The May 29-June 4 trip is complete. Use All Days as the memory view.
-          </p>
-        </ScreenHeader>
-
-        <section aria-labelledby="memory-heading" className="section-rise px-4 pb-6">
-          <div className="glass-surface rounded-[2rem] p-5">
-            <p className="text-sm font-black uppercase tracking-wide text-[#BF5AF2]">Memory view</p>
-            <h2 id="memory-heading" className="mt-3 text-2xl font-black text-white">
-              {formatDateLabel(tripStartDate)} through {formatDateLabel(tripEndDate)}
-            </h2>
-            <p className="mt-2 text-base leading-7 text-white">
-              Review the finished timeline, keep notes, and mark favorite moments as done.
-            </p>
-          </div>
-        </section>
-      </>
-    );
-  }
-
-  const nowItem = activeItem;
-  const activeLand = getActiveLandBlock(day, activeItem, statuses);
-  const upcomingLands = getUpcomingLandBlocks(day, activeLand);
-  const nextLand = activeLand ? upcomingLands[0] : undefined;
-  const laterLands = activeLand ? upcomingLands.slice(1, 4) : [];
-  const laterItems = upcomingItems.filter((item) => item.id !== nextItem?.id).slice(0, 3);
-  const dayPresentation = getDayPresentation(day);
+  const showCountdown = phase === 'before';
+  const countdownUnits = [
+    { label: 'Days', value: countdown.days },
+    { label: 'Hours', value: countdown.hours },
+    { label: 'Minutes', value: countdown.minutes },
+    { label: 'Seconds', value: countdown.seconds },
+  ];
 
   return (
-    <>
-      <header className="section-rise px-4 pb-8 pt-6">
-        <div className="glass-surface relative overflow-hidden rounded-[2.2rem] px-6 py-8">
-          <div className="absolute inset-0 bg-black/25" aria-hidden="true" />
-          <div className="relative">
-            <p className="text-[12px] font-black uppercase tracking-[0.18em] text-[#0A84FF]">{isToday ? 'Today' : 'Trip preview'}</p>
-            <h1 className="mt-4 text-[36px] font-black leading-[1.02] text-white sm:text-[44px]">{dayPresentation.title}</h1>
-            <p className="mt-3 text-[16px] font-semibold text-[#A1A1A6]">{formatDateLabel(day.date)}</p>
-          </div>
-        </div>
-      </header>
+    <main className="screen-fade px-4 pb-8 pt-8 sm:pt-12">
+      <section aria-labelledby="home-heading" className="section-rise text-center">
+        <h1 id="home-heading" className="sr-only">Disney Mayhem</h1>
+        <button
+          type="button"
+          onClick={onWordmarkTap}
+          {...wordmarkPressHandlers}
+          className={`mx-auto block rounded-2xl transition duration-200 focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-4 focus-visible:outline-[#0A84FF] ${
+            isWordmarkPressing ? 'scale-[0.97] drop-shadow-[0_0_20px_rgba(10,132,255,0.45)]' : ''
+          }`}
+          aria-label="Disney Mayhem"
+        >
+          <img
+            src={`${import.meta.env.BASE_URL}DisneyMayhem-WM.svg`}
+            alt="Disney Mayhem"
+            className="h-auto w-[min(78vw,280px)] sm:w-[320px]"
+          />
+        </button>
 
-      <section className="section-rise px-4 pb-8">
-        <TodayIntelCard day={day} statuses={statuses} phase={phase} countdown={countdown} />
-      </section>
-
-      <section aria-labelledby="now-heading" className="section-rise px-4">
-        <div className="glass-surface rounded-[2.4rem] px-6 py-12 text-center sm:px-10 sm:py-14">
-          <p className="text-[13px] font-black uppercase tracking-[0.18em] text-[#BF5AF2]">Now</p>
-          <h2 id="now-heading" className="mx-auto mt-5 max-w-2xl text-[40px] font-black leading-[1.02] text-white sm:text-[48px]">
-            {activeLand ? activeLand.land : nowItem ? nowItem.title : 'Open time'}
-          </h2>
-          <p className="mx-auto mt-5 max-w-xl text-[16px] font-semibold leading-7 text-[#A1A1A6]">
-            {activeLand && nowItem
-              ? `Current land · ${formatTimeRange(nowItem)}`
-              : nowItem
-                ? `${getItemDisplayLocation(nowItem)} · ${formatTimeRange(nowItem)}`
-              : 'No fixed item is active. Breathe, hydrate, and use Next when ready.'}
-          </p>
-          {(activeLand?.notes ?? nowItem?.notes) ? <p className="mx-auto mt-4 max-w-xl text-[15px] leading-6 text-[#A1A1A6]">{activeLand?.notes ?? nowItem?.notes}</p> : null}
-
-          {nextActivity ? (
-            <div className="mx-auto mt-7 max-w-md rounded-full bg-[#0A84FF] px-5 py-3 text-[16px] font-black text-black">
-              Next: {nextActivity.title}
+        {showCountdown ? (
+          <>
+            <p className="mt-5 text-[13px] font-black uppercase tracking-[0.18em] text-white">Disney Mayhem begins in...</p>
+            <div className="glass-surface mx-auto mt-7 max-w-3xl rounded-[1.75rem] px-5 py-7 sm:px-8 sm:py-9">
+              <div className="flex flex-wrap justify-center gap-x-6 gap-y-7" aria-live="polite" aria-label="Live countdown to departure">
+                {countdownUnits.map((unit) => (
+                  <div key={unit.label} className="basis-[calc(50%-0.75rem)] sm:basis-auto">
+                    <div className="tabular-nums font-black leading-none text-[#0A84FF] [font-size:clamp(2.8rem,12vw,5.5rem)]">
+                      {String(unit.value).padStart(2, '0')}
+                    </div>
+                    <div className="mt-3 text-[12px] font-black uppercase tracking-[0.16em] text-[#A1A1A6]">{unit.label}</div>
+                  </div>
+                ))}
+              </div>
             </div>
-          ) : null}
-
-          {canEdit && nowItem && onEditItem ? (
-            <button
-              type="button"
-              onClick={() => onEditItem(day.id, nowItem)}
-              className="ios-icon-button mt-7"
-              aria-label="Edit"
-              title="Edit"
-            >
-              <LucideIcon name="pencil" size={20} />
-            </button>
-          ) : null}
-        </div>
+          </>
+        ) : null}
       </section>
 
-      <section aria-labelledby="next-heading" className="section-rise mt-12 px-4">
-        <h2 id="next-heading" className="mb-4 text-[13px] font-black uppercase tracking-[0.18em] text-[#0A84FF]">
-          Next
+      <section aria-labelledby="dashboard-heading" className={`section-rise ${showCountdown ? 'mt-10' : 'mt-8'}`}>
+        <h2 id="dashboard-heading" className="text-[13px] font-black uppercase tracking-[0.18em] text-[#A1A1A6]">
+          Trip Dashboard
         </h2>
-        {activeLand ? (
-          <div className="border-y border-[#2C2C2E]/70 py-5">
-            {nextLand ? (
-              <div>
-                <p className="text-[13px] font-black uppercase tracking-[0.16em] text-[#0A84FF]">{formatLandTime(nextLand)}</p>
-                <h3 className="mt-2 text-[22px] font-black leading-tight text-white">{nextLand.land}</h3>
-                <p className="mt-2 text-[15px] font-semibold text-[#A1A1A6]">
-                  {nextLand.activities.length > 0 ? `${nextLand.activities.length} activities` : 'Flexible block'}
-                </p>
-              </div>
-            ) : (
-              <div className="text-[15px] text-[#A1A1A6]">No more lands queued up.</div>
-            )}
-          </div>
-        ) : nextItem && nextItem.id !== activeItem?.id ? (
-          <div className="border-y border-[#2C2C2E]/70 py-5">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-[13px] font-black uppercase tracking-[0.16em] text-[#0A84FF]">{formatTimeRange(nextItem)}</p>
-                <h3 className="mt-2 text-[22px] font-black leading-tight text-white">{nextItem.title}</h3>
-                <p className="mt-2 text-[15px] font-semibold text-[#A1A1A6]">{getItemDisplayLocation(nextItem)}</p>
-              </div>
-              {canEdit && onEditItem ? (
-              <button
-                type="button"
-                onClick={() => onEditItem(day.id, nextItem)}
-                className="ios-icon-button"
-                aria-label="Edit"
-                title="Edit"
-              >
-                <LucideIcon name="pencil" size={20} />
-              </button>
-              ) : null}
-            </div>
-          </div>
-        ) : (
-          <div className="border-y border-[#2C2C2E]/70 py-5 text-[15px] text-[#A1A1A6]">Nothing queued up yet.</div>
-        )}
-      </section>
-
-      <section aria-labelledby="later-heading" className="section-rise mt-12 px-4 pb-8">
-        <h2 id="later-heading" className="mb-4 text-[13px] font-black uppercase tracking-[0.18em] text-[#A1A1A6]">
-          Later
-        </h2>
-        <ul className="divide-y divide-[#2C2C2E]/70" aria-label="Later today">
-          {activeLand
-            ? laterLands.map((land) => (
-                <li key={land.id} className="min-h-16 px-1 py-3">
-                  <p className="text-[12px] font-black uppercase tracking-[0.16em] text-[#A1A1A6]">{formatLandTime(land)}</p>
-                  <h3 className="mt-1 text-[18px] font-black leading-tight text-white">{land.land}</h3>
-                  <p className="mt-1 text-[14px] text-[#A1A1A6]">
-                    {land.activities.length > 0 ? land.activities.map((activity) => activity.title).join(' · ') : 'Flexible block'}
-                  </p>
-                </li>
-              ))
-            : laterItems.map((item) => (
-            <li key={item.id} className="flex min-h-16 items-center justify-between gap-4 rounded-[1.25rem] px-1 py-3">
-              <div>
-                <p className="text-[12px] font-black uppercase tracking-[0.16em] text-[#A1A1A6]">{formatTimeRange(item)}</p>
-                <h3 className="mt-1 text-[18px] font-black leading-tight text-white">{item.title}</h3>
-                <p className="mt-1 text-[14px] text-[#A1A1A6]">{getItemDisplayLocation(item)}</p>
-              </div>
-              {canEdit && onEditItem ? (
-              <button
-                type="button"
-                onClick={() => onEditItem(day.id, item)}
-                className="ios-icon-button"
-                aria-label="Edit"
-                title="Edit"
-              >
-                <LucideIcon name="pencil" size={20} />
-              </button>
-              ) : null}
-            </li>
-          ))}
-          {(activeLand ? laterLands.length : laterItems.length) === 0 ? <li className="glass-surface rounded-[1.4rem] p-4 text-[15px] text-[#A1A1A6]">No later items for this day.</li> : null}
-        </ul>
-        <div className="mt-6 border-t border-[#2C2C2E]/70 pt-6">
-          <button
-            type="button"
-            onClick={onViewFullDay}
-            className="min-h-12 w-full rounded-full bg-[#0A84FF] px-5 py-3 text-[16px] font-black text-black focus-visible:outline focus-visible:outline-4 focus-visible:outline-offset-2 focus-visible:outline-[#0A84FF] sm:w-auto"
-          >
-            View Full Day
-          </button>
+        <div className="mt-4">
+          <TodayIntelCard day={day} statuses={statuses} phase={phase} countdown={countdown} />
         </div>
-        <section aria-labelledby="today-settings-heading" className="mt-8">
-          <h2 id="today-settings-heading" className="text-[12px] font-black uppercase tracking-[0.18em] text-[#A1A1A6]">
+        <div className="mt-4 grid grid-cols-1 gap-3 min-[390px]:grid-cols-2">
+          {days.map((tripDay) => {
+            const presentation = getDayPresentation(tripDay);
+            return (
+              <DashboardTile
+                key={tripDay.id}
+                title={formatDashboardDateLabel(tripDay.date)}
+                subtitle={tripDay.label}
+                icon={presentation.icon}
+                onClick={() => onOpenDay(tripDay.id)}
+              />
+            );
+          })}
+          <DashboardTile
+            title="Reservations"
+            subtitle="Dining and fixed plans"
+            icon="utensils"
+            onClick={onOpenReservations}
+          />
+        </div>
+        <section aria-labelledby="app-settings-heading" className="mt-8">
+          <h3 id="app-settings-heading" className="text-[12px] font-black uppercase tracking-[0.18em] text-[#A1A1A6]">
             App Settings
-          </h2>
+          </h3>
           <div className="mt-3">
             <NotificationSettingsControl />
           </div>
         </section>
       </section>
-    </>
+    </main>
   );
 }
 
@@ -3893,7 +3696,7 @@ export default function App() {
         className="pointer-events-none fixed inset-0 z-[1] bg-[linear-gradient(to_bottom,rgba(0,0,0,0.12),rgba(0,0,0,0.38))]"
       />
       {fireworksRun > 0 ? <FireworksOverlay key={fireworksRun} fireworksKey={fireworksRun} onComplete={() => setFireworksRun(0)} /> : null}
-      <div key={`${activeTab}-${selectedDayId ?? 'all'}`} className={`screen-fade relative z-10 mx-auto max-w-4xl ${phase === 'before' ? 'pb-8' : 'pb-20'}`}>
+      <div key={`${activeTab}-${selectedDayId ?? 'all'}`} className="screen-fade relative z-10 mx-auto max-w-4xl pb-8">
         {phase === 'before' && activeTab !== 'today' && activeTab !== 'days' && activeTab !== 'reservations' ? (
           <div className="sticky top-0 z-20 px-4 pb-2 pt-3 backdrop-blur-sm">
             <button
@@ -3954,7 +3757,6 @@ export default function App() {
           />
         ) : null}
       </div>
-      {phase === 'before' ? null : <Tabs activeTab={activeTab} onChange={openTab} />}
       {editor ? (
         <ItemEditorSheet
           editor={editor}
