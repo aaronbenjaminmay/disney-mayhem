@@ -39,6 +39,10 @@ function getNormalizedFallbackType(item: TripItem): TripItem['type'] {
   return 'activities' in item && Array.isArray(item.activities) ? 'flexible' : 'scheduled';
 }
 
+function isEmptyFlexibleItem(item: TripItem): boolean {
+  return item.type === 'flexible' && (!Array.isArray(item.activities) || item.activities.length === 0);
+}
+
 function normalizeTripItem(item: TripItem): TripItem {
   const runtimeItem = item as TripItem & { type?: unknown; category?: unknown; area?: unknown };
   if (isKnownItemType(runtimeItem.type)) return item;
@@ -66,6 +70,11 @@ function normalizeTripItem(item: TripItem): TripItem {
 
 export function toEditableFields(item: TripItem, dayDate?: string): EditableItemFields {
   const reservationLike = isReservationItem(item) || 'confirmationNumber' in item;
+  const editableType = reservationLike
+    ? 'reservation'
+    : isEmptyFlexibleItem(item)
+      ? 'scheduled'
+      : getSafeItemType((item as TripItem & { type?: unknown }).type, getNormalizedFallbackType(item), item.id);
 
   return {
     date: item.type === 'reservation' ? item.date : dayDate,
@@ -80,7 +89,7 @@ export function toEditableFields(item: TripItem, dayDate?: string): EditableItem
     notes: item.notes ?? '',
     category: item.type === 'scheduled' ? item.category : undefined,
     placement: item.placement,
-    type: reservationLike ? 'reservation' : getSafeItemType((item as TripItem & { type?: unknown }).type, getNormalizedFallbackType(item), item.id),
+    type: editableType,
   };
 }
 
@@ -134,7 +143,9 @@ function applyEdit(item: TripItem, fields?: EditableItemFields): TripItem {
   const safeItem = normalizeTripItem(item);
   if (!fields) return safeItem;
 
-  const preservedType = runtimeTypeKnown
+  const preservedType = isEmptyFlexibleItem(safeItem)
+    ? 'scheduled'
+    : runtimeTypeKnown
     ? getSafeItemType(safeItem.type, getNormalizedFallbackType(safeItem), safeItem.id)
     : getSafeItemType(fields.type, getNormalizedFallbackType(safeItem), safeItem.id);
   const safeFields = {
@@ -459,15 +470,21 @@ export function mergeTripEdits(
       });
   });
 
+  const addedItemsById = new Map<string, { sourceDayId: string; item: TripItem }>();
   Object.entries(addedItems).forEach(([sourceDayId, items]) => {
-    items
-      .filter((item) => !deleted.has(item.id))
-      .forEach((item) => {
-        const fields = itemEdits[item.id];
-        const updated = applyEdit(normalizeTripItem(item), fields);
-        const targetDayId = getItemTargetDayId(updated, sourceDayId, fields);
-        itemsByDay.set(targetDayId, insertAddedItem(itemsByDay.get(targetDayId) ?? [], updated));
-      });
+    items.forEach((item) => {
+      if (deleted.has(item.id)) return;
+      addedItemsById.set(item.id, { sourceDayId, item });
+    });
+  });
+
+  addedItemsById.forEach(({ sourceDayId, item }) => {
+    const fields = itemEdits[item.id];
+    const updated = applyEdit(normalizeTripItem(item), fields);
+    const targetDayId = getItemTargetDayId(updated, sourceDayId, fields);
+    const existingItems = itemsByDay.get(targetDayId) ?? [];
+    const withoutDuplicate = existingItems.filter((candidate) => candidate.id !== updated.id);
+    itemsByDay.set(targetDayId, insertAddedItem(withoutDuplicate, updated));
   });
 
   return baseDays.map((day) => {
