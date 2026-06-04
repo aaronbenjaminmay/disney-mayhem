@@ -155,7 +155,7 @@ function applyEdit(item: TripItem, fields?: EditableItemFields): TripItem {
   const updated = createItemFromFields(safeItem.id, safeFields);
   const existingActivities = 'activities' in safeItem && Array.isArray(safeItem.activities) ? safeItem.activities : undefined;
 
-  if (updated.type === 'flexible' && existingActivities) {
+  if (updated.type === 'flexible' && existingActivities?.length) {
     return {
       ...safeItem,
       ...updated,
@@ -164,7 +164,7 @@ function applyEdit(item: TripItem, fields?: EditableItemFields): TripItem {
     };
   }
 
-  if (updated.type === 'scheduled' && existingActivities) {
+  if (updated.type === 'scheduled' && existingActivities?.length) {
     return {
       ...safeItem,
       ...updated,
@@ -180,6 +180,10 @@ function applyEdit(item: TripItem, fields?: EditableItemFields): TripItem {
       ...updated,
       category: safeItem.category,
     } satisfies ScheduledItem;
+  }
+
+  if (updated.type === 'scheduled') {
+    return updated;
   }
 
   if (updated.type === 'reservation') {

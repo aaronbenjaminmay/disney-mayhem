@@ -88,7 +88,7 @@ function shouldShowSecondaryText(primary?: string, secondary?: string): boolean 
 }
 
 function hasTimelineActivityBlock(item: TripItem): item is TimelineActivityBlock {
-  return 'activities' in item && Array.isArray(item.activities);
+  return 'activities' in item && Array.isArray(item.activities) && item.activities.length > 0;
 }
 
 function getKnownStatusIds(days: TripDay[]): Set<string> {
