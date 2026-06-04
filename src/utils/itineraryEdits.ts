@@ -21,6 +21,10 @@ export function isReservationItem(item: TripItem): item is ReservationItem | Sch
   return item.type === 'reservation' || (item.type === 'scheduled' && item.category === 'reservation');
 }
 
+function hasMeaningfulConfirmationNumber(item: TripItem): boolean {
+  return 'confirmationNumber' in item && typeof item.confirmationNumber === 'string' && item.confirmationNumber.trim().length > 0;
+}
+
 function isKnownItemType(value: unknown): value is TripItem['type'] {
   return typeof value === 'string' && validItemTypes.has(value);
 }
@@ -33,6 +37,24 @@ function getSafeItemType(value: unknown, fallback: TripItem['type'], id?: string
   }
 
   return fallback;
+}
+
+function getCanonicalItemType(fields: EditableItemFields, id?: string): TripItem['type'] {
+  const itemType = getSafeItemType(fields.type, 'scheduled', id);
+
+  if (itemType === 'reservation' && fields.category && fields.category !== 'reservation') {
+    if (id) {
+      warnUnknownPersistenceReference('incompatible reservation edit', id, {
+        type: fields.type,
+        category: fields.category,
+        fallback: 'scheduled',
+      });
+    }
+
+    return 'scheduled';
+  }
+
+  return itemType;
 }
 
 function getNormalizedFallbackType(item: TripItem): TripItem['type'] {
@@ -69,7 +91,7 @@ function normalizeTripItem(item: TripItem): TripItem {
 }
 
 export function toEditableFields(item: TripItem, dayDate?: string): EditableItemFields {
-  const reservationLike = isReservationItem(item) || 'confirmationNumber' in item;
+  const reservationLike = isReservationItem(item) || hasMeaningfulConfirmationNumber(item);
   const editableType = reservationLike
     ? 'reservation'
     : isEmptyFlexibleItem(item)
@@ -85,7 +107,7 @@ export function toEditableFields(item: TripItem, dayDate?: string): EditableItem
     from: item.type === 'scheduled' ? item.from ?? '' : '',
     to: item.type === 'scheduled' ? item.to ?? '' : '',
     area: 'area' in item ? item.area ?? '' : '',
-    confirmationNumber: 'confirmationNumber' in item ? item.confirmationNumber ?? '' : '',
+    confirmationNumber: reservationLike && 'confirmationNumber' in item ? item.confirmationNumber ?? '' : '',
     notes: item.notes ?? '',
     category: item.type === 'scheduled' ? item.category : undefined,
     placement: item.placement,
@@ -95,7 +117,7 @@ export function toEditableFields(item: TripItem, dayDate?: string): EditableItem
 
 export function createItemFromFields(id: string, fields: EditableItemFields): TripItem {
   const time = fields.time?.trim();
-  const itemType = getSafeItemType(fields.type, 'scheduled', id);
+  const itemType = getCanonicalItemType(fields, id);
   const base = {
     id,
     date: fields.date,
@@ -106,7 +128,6 @@ export function createItemFromFields(id: string, fields: EditableItemFields): Tr
     from: fields.from?.trim() || undefined,
     to: fields.to?.trim() || undefined,
     area: fields.area?.trim() || undefined,
-    confirmationNumber: fields.confirmationNumber?.trim() || undefined,
     notes: fields.notes?.trim() || undefined,
     placement: fields.placement,
   };
@@ -117,6 +138,7 @@ export function createItemFromFields(id: string, fields: EditableItemFields): Tr
       type: 'reservation',
       date: fields.date || '',
       time: time || '09:00',
+      confirmationNumber: fields.confirmationNumber?.trim() || undefined,
       category: 'reservation',
     } satisfies ReservationItem;
   }
