@@ -118,6 +118,143 @@ function isLegacySingleLandCardBlock(day: TripDay, item: TimelineActivityBlock, 
   return isKnownParkLandName(day.park, groups[0].land);
 }
 
+type LandCardDiagnosticRenderMode =
+  | 'land-card'
+  | 'parent-context-header'
+  | 'generic-flexible'
+  | 'travel'
+  | 'reservation'
+  | 'skipped';
+
+function readOptionalStringProperty(item: TripItem, property: string): string | undefined {
+  const value = (item as Record<string, unknown>)[property];
+  return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
+function isLandCardDebugEnabled(): boolean {
+  try {
+    return typeof window !== 'undefined' && window.localStorage.getItem('debug_land_cards') === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function isLandCardDiagnosticCandidate(item: TripItem): boolean {
+  return (
+    item.type === 'flexible' ||
+    hasTimelineActivityBlock(item) ||
+    Boolean(readOptionalStringProperty(item, 'kind')) ||
+    Boolean(readOptionalStringProperty(item, 'landGroupId')) ||
+    Boolean(readOptionalStringProperty(item, 'groupId')) ||
+    Boolean(readOptionalStringProperty(item, 'blockId'))
+  );
+}
+
+function getLandCardDiagnosticMode(
+  day: TripDay,
+  item: TripItem,
+  groups: TimelineLandGroup[],
+): {
+  isExplicitLandCard: boolean;
+  isLegacySingleLandCard: boolean;
+  isMultiLandParentBlock: boolean;
+  finalRenderMode: LandCardDiagnosticRenderMode;
+  reason: string;
+} {
+  const itemType = readOptionalStringProperty(item, 'type') ?? item.type;
+  const itemCategory = readOptionalStringProperty(item, 'category');
+
+  if (itemType === 'reservation' || (itemType === 'scheduled' && itemCategory === 'reservation')) {
+    return {
+      isExplicitLandCard: false,
+      isLegacySingleLandCard: false,
+      isMultiLandParentBlock: false,
+      finalRenderMode: 'reservation',
+      reason: 'Explicit reservation item.',
+    };
+  }
+
+  if (itemType === 'scheduled' && itemCategory === 'transport') {
+    return {
+      isExplicitLandCard: false,
+      isLegacySingleLandCard: false,
+      isMultiLandParentBlock: false,
+      finalRenderMode: 'travel',
+      reason: 'Scheduled transport item renders with travel styling.',
+    };
+  }
+
+  if (!hasTimelineActivityBlock(item)) {
+    return {
+      isExplicitLandCard: false,
+      isLegacySingleLandCard: false,
+      isMultiLandParentBlock: false,
+      finalRenderMode: itemType === 'flexible' ? 'generic-flexible' : 'skipped',
+      reason: itemType === 'flexible' ? 'Flexible item without an activities array.' : 'No land-card metadata or activities.',
+    };
+  }
+
+  const explicitMarkers = [
+    item.kind === 'land-card' ? 'kind=land-card' : '',
+    item.landGroupId ? 'landGroupId present' : '',
+    item.id.startsWith('local-land-') ? 'local-land id' : '',
+  ].filter(Boolean);
+  const isExplicitLandCard = isStandaloneLandCardBlock(item);
+  const isLegacySingleLandCard = !isExplicitLandCard && itemType === 'flexible' && groups.length === 1 && isKnownParkLandName(day.park, groups[0].land);
+  const isMultiLandParentBlock = itemType === 'flexible' && groups.length > 1;
+
+  if (isExplicitLandCard) {
+    return {
+      isExplicitLandCard,
+      isLegacySingleLandCard,
+      isMultiLandParentBlock,
+      finalRenderMode: 'land-card',
+      reason: `Explicit land-card marker matched: ${explicitMarkers.join(', ') || 'standalone land card helper returned true'}.`,
+    };
+  }
+
+  if (isLegacySingleLandCard) {
+    return {
+      isExplicitLandCard,
+      isLegacySingleLandCard,
+      isMultiLandParentBlock,
+      finalRenderMode: 'land-card',
+      reason: `Legacy fallback matched: one detected land group (${groups[0].land}) is a known ${day.park} land.`,
+    };
+  }
+
+  if (isMultiLandParentBlock) {
+    return {
+      isExplicitLandCard,
+      isLegacySingleLandCard,
+      isMultiLandParentBlock,
+      finalRenderMode: 'parent-context-header',
+      reason: `Multiple land groups detected (${groups.length}), so the parent time/context header is preserved.`,
+    };
+  }
+
+  if (itemType === 'flexible') {
+    const onlyGroup = groups[0]?.land;
+    return {
+      isExplicitLandCard,
+      isLegacySingleLandCard,
+      isMultiLandParentBlock,
+      finalRenderMode: 'generic-flexible',
+      reason: onlyGroup
+        ? `Single group (${onlyGroup}) is not a known ${day.park} land and no explicit land-card marker exists.`
+        : 'Flexible item has no detected land groups or explicit land-card marker.',
+    };
+  }
+
+  return {
+    isExplicitLandCard,
+    isLegacySingleLandCard,
+    isMultiLandParentBlock,
+    finalRenderMode: 'skipped',
+    reason: 'Activity-bearing item did not match land-card, multi-land parent, travel, reservation, or generic flexible rules.',
+  };
+}
+
 function getKnownStatusIds(days: TripDay[]): Set<string> {
   const ids = new Set<string>();
 
@@ -337,6 +474,45 @@ function groupActivitiesByLand(day: TripDay, item: TimelineActivityBlock, landGr
   }
 
   return sortTimelineLandGroups(groups, landGroupOrders);
+}
+
+function logLandCardDiagnostics(day: TripDay, landGroupOrders: Record<string, LandGroupOrder>): void {
+  if (!isLandCardDebugEnabled()) return;
+
+  const rows = day.items.filter(isLandCardDiagnosticCandidate).map((item) => {
+    const groups = hasTimelineActivityBlock(item) ? groupActivitiesByLand(day, item, landGroupOrders) : [];
+    const knownLandNames = groups.filter((group) => isKnownParkLandName(day.park, group.land)).map((group) => group.land);
+    const mode = getLandCardDiagnosticMode(day, item, groups);
+
+    return {
+      'dayId/date': `${day.id} / ${day.date}`,
+      'item.id': item.id,
+      'item.title': item.title,
+      'item.type': item.type,
+      'item.kind': readOptionalStringProperty(item, 'kind') ?? '',
+      'item.category': readOptionalStringProperty(item, 'category') ?? '',
+      'item.time': item.time ?? '',
+      'item.endTime': item.endTime ?? '',
+      landGroupId: readOptionalStringProperty(item, 'landGroupId') ?? '',
+      groupId: readOptionalStringProperty(item, 'groupId') ?? '',
+      blockId: readOptionalStringProperty(item, 'blockId') ?? '',
+      'activities count': hasTimelineActivityBlock(item) ? item.activities.length : 0,
+      'detected land groups': groups.map((group) => `${group.land} (${group.activities.length})`).join(', '),
+      'detected land group count': groups.length,
+      'detected known park land names': knownLandNames.join(', '),
+      isExplicitLandCard: mode.isExplicitLandCard,
+      isLegacySingleLandCard: mode.isLegacySingleLandCard,
+      isMultiLandParentBlock: mode.isMultiLandParentBlock,
+      'final render mode': mode.finalRenderMode,
+      reason: mode.reason,
+    };
+  });
+
+  if (!rows.length) return;
+
+  console.groupCollapsed(`[Disney Mayhem] Land card diagnostics: ${day.date} ${day.label}`);
+  console.table(rows);
+  console.groupEnd();
 }
 
 function getDayPresentation(day: TripDay) {
@@ -2769,6 +2945,10 @@ function DayTimeline({
       window.removeEventListener('resize', updateCollapsedHeader);
     };
   }, [day.id]);
+
+  useEffect(() => {
+    logLandCardDiagnostics(day, landGroupOrders);
+  }, [day, landGroupOrders]);
 
   return (
     <section ref={sectionRef} aria-labelledby={`${day.id}-heading`} className="section-rise px-4 pb-8 pt-3">
