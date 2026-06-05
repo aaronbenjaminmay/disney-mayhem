@@ -97,6 +97,27 @@ function isStandaloneLandCardBlock(item: TimelineActivityBlock): boolean {
   return item.kind === 'land-card' || Boolean(item.landGroupId) || item.id.startsWith('local-land-');
 }
 
+const knownParkLandNames: Record<ParkName, string[]> = {
+  'Magic Kingdom': ['Adventureland', 'Frontierland', 'Liberty Square', 'Fantasyland', 'Tomorrowland'],
+  EPCOT: ['World Celebration', 'World Discovery', 'World Showcase', 'World Showcase - Norway', 'World Showcase - France'],
+  'Hollywood Studios': ['Hollywood Boulevard', 'Toy Story Land', 'Galaxy’s Edge', 'Sunset Boulevard', 'Echo Lake'],
+  'Animal Kingdom': ['Africa', 'Rafiki’s Planet Watch', 'Pandora', 'Asia'],
+  'Travel Day': [],
+  'Resort Day': [],
+};
+
+function isKnownParkLandName(park: ParkName, land: string): boolean {
+  const normalizedLand = normalizeDisplayText(land);
+  return knownParkLandNames[park].some((knownLand) => normalizeDisplayText(knownLand) === normalizedLand);
+}
+
+function isLegacySingleLandCardBlock(day: TripDay, item: TimelineActivityBlock, groups: TimelineLandGroup[]): boolean {
+  if (isStandaloneLandCardBlock(item)) return true;
+  if (item.type !== 'flexible' || groups.length !== 1) return false;
+
+  return isKnownParkLandName(day.park, groups[0].land);
+}
+
 function getKnownStatusIds(days: TripDay[]): Set<string> {
   const ids = new Set<string>();
 
@@ -2625,7 +2646,7 @@ function FlexibleTimelineItem({
 }) {
   const itemStatus = statuses[getItemStatusKey(item)];
   const groups = groupActivitiesByLand(day, item, landGroupOrders);
-  const isLandCardBlock = isStandaloneLandCardBlock(item);
+  const isLandCardBlock = isLegacySingleLandCardBlock(day, item, groups);
 
   return (
     <article className="py-5">
