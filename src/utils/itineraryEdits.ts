@@ -74,9 +74,31 @@ function isEmptyFlexibleItem(item: TripItem): boolean {
   return !hasLandCardIdentity;
 }
 
+function normalizeLegacyLandCard(item: TripItem): TripItem {
+  if (item.type !== 'flexible' || !Array.isArray(item.activities)) return item;
+
+  const landText = `${item.kind ?? ''} ${item.landGroupId ?? ''} ${item.area ?? ''} ${item.location ?? ''} ${item.title ?? ''}`.trim().toLowerCase();
+  const hasLandCardIdentity =
+    item.kind === 'land-card' ||
+    Boolean(item.landGroupId) ||
+    item.id.startsWith('local-land-') ||
+    landText.includes('activities');
+
+  if (!hasLandCardIdentity) return item;
+
+  const land = item.area || item.location || item.title.replace(/\s+activities$/i, '').trim();
+  return {
+    ...item,
+    kind: 'land-card',
+    landGroupId: item.landGroupId,
+    area: land,
+    location: item.location || land,
+  };
+}
+
 function normalizeTripItem(item: TripItem): TripItem {
   const runtimeItem = item as TripItem & { type?: unknown; category?: unknown; area?: unknown };
-  if (isKnownItemType(runtimeItem.type)) return item;
+  if (isKnownItemType(runtimeItem.type)) return normalizeLegacyLandCard(item);
 
   const fallback = getNormalizedFallbackType(item);
   warnUnknownPersistenceReference('unknown item type', item.id, { type: runtimeItem.type, fallback });
