@@ -1,10 +1,11 @@
 import type { Activity, EditableActivityFields, EditableItemFields, ItemStatus, LandGroupCard, LandGroupOrder, ReservationDayCard, TripItem } from '../types';
 import { createItemFromFields } from '../utils/itineraryEdits';
-import { supabase, tripId } from './supabaseClient';
+import { hasSupabaseAnonKey, hasSupabaseUrl, supabase, tripId } from './supabaseClient';
 
 const statusEditType = 'status';
 const activityEditType = 'activity';
 const itemEditType = 'item';
+const syncedEditTypes = [statusEditType, activityEditType, itemEditType];
 
 type TripEditRow = {
   item_id?: string | null;
@@ -58,16 +59,31 @@ function getRowTime(row: TripEditRow): number {
 }
 
 export async function fetchSupabaseStatusEdits(sinceUpdatedAt?: string | null): Promise<SupabaseStatusEdits | null> {
+  const fetchDiagnostics = {
+    hasUrl: hasSupabaseUrl,
+    hasAnonKey: hasSupabaseAnonKey,
+    tripId: tripId || '(missing)',
+    table: 'trip_edits',
+    select: 'item_id,type,payload,updated_at',
+    typeFilter: syncedEditTypes.join(', '),
+    sinceUpdatedAt: sinceUpdatedAt ?? '(initial fetch)',
+  };
+
   if (!supabase || !tripId) {
-    console.error('Supabase configuration missing');
+    console.error('Supabase configuration missing', {
+      ...fetchDiagnostics,
+      errorMessage: !supabase ? 'Supabase client is not configured.' : 'VITE_TRIP_ID is missing.',
+    });
     return null;
   }
+
+  console.log('Supabase trip_edits fetch diagnostics', fetchDiagnostics);
 
   let query = supabase
     .from('trip_edits')
     .select('item_id,type,payload,updated_at')
     .eq('trip_id', tripId)
-    .in('type', [statusEditType, activityEditType, itemEditType])
+    .in('type', syncedEditTypes)
     .order('updated_at', { ascending: true });
 
   if (sinceUpdatedAt) {
@@ -77,13 +93,20 @@ export async function fetchSupabaseStatusEdits(sinceUpdatedAt?: string | null): 
   const { data, error } = await query;
 
   if (error) {
-    console.error('Supabase error', error);
+    console.error('Supabase error', {
+      ...fetchDiagnostics,
+      errorMessage: error.message,
+      error,
+    });
     return null;
   }
 
   console.log('Supabase connected');
-  console.log('Supabase edits fetched');
-  console.log(`Supabase edits fetched: ${data?.length ?? 0}`);
+  console.log('Supabase edits fetched', {
+    ...fetchDiagnostics,
+    countReturned: data?.length ?? 0,
+    errorMessage: null,
+  });
 
   const statuses: Record<string, ItemStatus> = {};
   const activityEdits: Record<string, EditableActivityFields> = {};
