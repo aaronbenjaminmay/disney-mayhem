@@ -45,6 +45,7 @@ import {
 type TimelineActivityBlock = TripItem & {
   activities: Activity[];
   area?: string;
+  kind?: 'land-card';
   landGroupId?: string;
 };
 
@@ -90,6 +91,10 @@ function shouldShowSecondaryText(primary?: string, secondary?: string): boolean 
 
 function hasTimelineActivityBlock(item: TripItem): item is TimelineActivityBlock {
   return 'activities' in item && Array.isArray(item.activities);
+}
+
+function isStandaloneLandCardBlock(item: TimelineActivityBlock): boolean {
+  return item.kind === 'land-card' || Boolean(item.landGroupId) || item.id.startsWith('local-land-');
 }
 
 function getKnownStatusIds(days: TripDay[]): Set<string> {
@@ -2431,28 +2436,30 @@ function LandEditorSheet({
               />
             </label>
           ) : null}
+          {editor.canEditParentDetails ? (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="block">
+                <span className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Start time</span>
+                <input
+                  type="time"
+                  value={editor.time ?? ''}
+                  onChange={(event) => onChange({ ...editor, time: event.target.value })}
+                  className={inputClass}
+                />
+              </label>
+              <label className="block">
+                <span className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">End time</span>
+                <input
+                  type="time"
+                  value={editor.endTime ?? ''}
+                  onChange={(event) => onChange({ ...editor, endTime: event.target.value })}
+                  className={inputClass}
+                />
+              </label>
+            </div>
+          ) : null}
           {editor.mode === 'create' ? (
             <>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className="block">
-                  <span className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Time</span>
-                  <input
-                    type="time"
-                    value={editor.time ?? ''}
-                    onChange={(event) => onChange({ ...editor, time: event.target.value })}
-                    className={inputClass}
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">End time</span>
-                  <input
-                    type="time"
-                    value={editor.endTime ?? ''}
-                    onChange={(event) => onChange({ ...editor, endTime: event.target.value })}
-                    className={inputClass}
-                  />
-                </label>
-              </div>
               <label className="block">
                 <span className="text-sm font-black uppercase tracking-wide text-[#A1A1A6]">Placement</span>
                 <select
@@ -2618,10 +2625,11 @@ function FlexibleTimelineItem({
 }) {
   const itemStatus = statuses[getItemStatusKey(item)];
   const groups = groupActivitiesByLand(day, item, landGroupOrders);
+  const isLandCardBlock = isStandaloneLandCardBlock(item);
 
   return (
     <article className="py-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      {!isLandCardBlock ? <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-[12px] font-black uppercase tracking-[0.16em] text-[#0A84FF]">{formatTimeRange(item)}</p>
           <p className="mt-2 text-[15px] font-semibold text-[#A1A1A6]">{getItemDisplayLocation(item)}</p>
@@ -2640,15 +2648,19 @@ function FlexibleTimelineItem({
           ) : null}
           <StatusButton id={item.id} status={itemStatus} onCycle={onCycleStatus} />
         </div> : null}
-      </div>
+      </div> : null}
 
-      {item.notes ? <p className="mt-4 text-[15px] leading-6 text-[#A1A1A6]">{item.notes}</p> : null}
+      {!isLandCardBlock && item.notes ? <p className="mt-4 text-[15px] leading-6 text-[#A1A1A6]">{item.notes}</p> : null}
 
-      <div className="mt-6 space-y-7">
+      <div className={`${isLandCardBlock ? '' : 'mt-6'} space-y-7`}>
         {groups.map((group) => (
           <section key={group.groupId} aria-label={`${item.title} ${group.land}`} className="glass-surface rounded-[1.35rem] px-4 py-4">
             <div className="flex items-center justify-between gap-3">
-              <h4 className="text-[13px] font-black uppercase tracking-[0.18em] text-white">{group.land}</h4>
+              <div>
+                <h4 className="text-[13px] font-black uppercase tracking-[0.18em] text-white">{group.land}</h4>
+                {isLandCardBlock ? <p className="mt-1 text-[12px] font-black uppercase tracking-[0.16em] text-[#0A84FF]">{formatTimeRange(item)}</p> : null}
+                {isLandCardBlock && item.notes ? <p className="mt-2 text-[14px] leading-5 text-[#A1A1A6]">{item.notes}</p> : null}
+              </div>
               {onEditLand ? (
               <button
                 type="button"
@@ -3423,6 +3435,8 @@ export default function App() {
       groupId: group.groupId,
       parentItem: item,
       land: group.land,
+      time: item.time ?? '',
+      endTime: item.endTime ?? '',
       notes: canEditParentDetails ? item.notes ?? '' : '',
       canEditParentDetails,
       activities: group.activities.map((activity) => ({
@@ -3691,6 +3705,10 @@ export default function App() {
     if (landEditor.canEditParentDetails) {
       tripStorage.saveItemEdit(landEditor.parentItem.id, {
         ...toEditableFields(landEditor.parentItem, landEditor.dayId),
+        time: landEditor.time ?? '',
+        endTime: landEditor.endTime ?? '',
+        kind: 'land-card',
+        landGroupId: landEditor.groupId,
         title: `${land} activities`,
         location: land,
         area: land,
@@ -3706,8 +3724,8 @@ export default function App() {
       parentItemId: landEditor.parentItem.id,
       land,
       notes: landEditor.notes.trim() || undefined,
-      time: landEditor.parentItem.time,
-      endTime: landEditor.parentItem.endTime,
+      time: landEditor.time || undefined,
+      endTime: landEditor.endTime || undefined,
     });
 
     setLandEditor(null);

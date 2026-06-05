@@ -170,6 +170,8 @@ export type EditableItemFields = {
   date?: string;
   time?: string;
   endTime?: string;
+  kind?: 'land-card';
+  landGroupId?: string;
   title: string;
   location: string;
   from?: string;
